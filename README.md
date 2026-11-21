@@ -67,6 +67,17 @@ A command in an older message, user message, quoted block or partial substring i
 
 See `config/settings.json` and `config/projects.example.json`. Keep your actual `config/projects.json`, browser profile, logs and state local; they are excluded from Git.
 
+### Automatic build version
+
+A project may define an optional `versionSource` object:
+- `url`: HTTPS URL of a published JSON version manifest (for example, the channel's `version.json`).
+- `field`: numeric field containing the currently published version.
+- `increment`: amount to add (normally `1`).
+- `minimum`: lowest accepted published version.
+- `placeholder`: token that must appear exactly once in `buildArguments`, such as `{VERSION_CODE}`.
+
+Before a build, DevBridge reads the manifest, validates the current version, adds the increment, and substitutes the placeholder in the build arguments. If the manifest cannot be read or validated, the build is stopped. `-CheckOnly` performs the same version lookup and argument validation but never starts a build. A failed build does not consume a version; the next attempt will calculate from the latest successfully published manifest.
+
 ## Known limitations
 
 - Browser selectors can change when ChatGPT's UI changes.
