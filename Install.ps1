@@ -7,7 +7,7 @@ foreach ($tool in @("git", "node", "npm")) {
     }
 }
 $edgePaths = @(
-    "$env:ProgramFiles(x86)\Microsoft\Edge\Application\msedge.exe",
+    "$( [Environment]::GetEnvironmentVariable('ProgramFiles(x86)') )\Microsoft\Edge\Application\msedge.exe",
     "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
 )
 if (-not ($edgePaths | Where-Object { Test-Path $_ })) {
