@@ -1,0 +1,19 @@
+{
+  "projects": [
+    {
+      "name": "Example Android project",
+      "repository": "C:\\work\\ExampleProject",
+      "branch": "feature/my-work",
+      "buildCommand": "powershell.exe",
+      "buildArguments": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "scripts\\build.ps1"
+      ],
+      "workingDirectory": ".",
+      "enabled": false
+    }
+  ]
+}
