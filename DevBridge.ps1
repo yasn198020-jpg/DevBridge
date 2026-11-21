@@ -234,7 +234,8 @@ if ($CheckOnly) {
 if (-not (Test-Path -LiteralPath $BridgePath)) { throw "Missing browser/bridge.mjs" }
 $script:BrowserProcess = Start-Bridge
 try {
-    Write-Log "Opening ChatGPT browser. Sign in manually if needed."
+    Write-Log "Opening ChatGPT browser. Sign in and open the intended conversation in Edge."
+    [void](Read-Host "When the correct ChatGPT conversation is visible, press Enter here to start monitoring")
     $snapshot = Invoke-Bridge $script:BrowserProcess "snapshot"
     $lastSeenHash = Get-MessageHash ("$($snapshot.conversationMessageCount)|" + [string]$snapshot.assistantText)
     Write-Log "Waiting for a NEW assistant message ending with a DevBridge command."
