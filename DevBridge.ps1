@@ -274,9 +274,17 @@ try {
         $lastSeenHash = $hash
         $command = Get-CommandFromMessage $message
         if ($command -eq "DONE") {
-            Assert-LastBuildCurrent
-            Write-Log "Assistant marked task DONE after the latest remote commit passed the local build."
-            break
+            try {
+                Assert-LastBuildCurrent
+                Write-Log "Assistant marked task DONE after the latest remote commit passed the local build."
+                break
+            } catch {
+                $reason = $_.Exception.Message
+                Write-Log "DONE rejected: $reason"
+                $feedback = "DevBridge rejected DONE for safety: $reason Please inspect the repository state. If the remote branch contains a newer commit, issue DEVBRIDGE: BUILD so it can be pulled and tested. If the local working tree is dirty or Git cannot reach origin, explain the required manual action and use DEVBRIDGE: WAIT."
+                Invoke-Bridge $script:BrowserProcess "send" $feedback | Out-Null
+                continue
+            }
         }
         if ($command -eq "ABORT") { throw "Assistant requested ABORT." }
 
