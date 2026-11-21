@@ -135,8 +135,9 @@ Be concise but preserve technical details. Do not claim anything was tested unle
         $snap = Invoke-Bridge $script:BrowserProcess "snapshot"
         $candidate = [string]$snap.assistantText
         if (-not $candidate) { continue }
+        if ((Get-MessageHash $candidate) -eq $PreviousAssistantHash) { continue }
         if ($candidate -eq $previousText) { $stable++ } else { $previousText = $candidate; $stable = 0 }
-        if ($stable -lt 2) { continue }
+        if ($stable -lt 3) { continue }
         if ($candidate -match '^DEVBRIDGE HANDOFF SUMMARY(?:\r?\n|$)') {
             $summary = $candidate
             break
@@ -264,7 +265,7 @@ try {
             if ($command -eq "DONE") { break }
         }
         $handoffThreshold = [int]$settings.automation.handoffAtConversationCharacters
-        if ($handoffThreshold -gt 0 -and [int]$snapshot.conversationCharacters -ge $handoffThreshold) {
+        if ($command -ne "BUILD" -and $handoffThreshold -gt 0 -and [int]$snapshot.conversationCharacters -ge $handoffThreshold) {
             Write-Log "Conversation reached approximately $($snapshot.conversationCharacters) characters; starting handoff."
             $lastSeenHash = Invoke-Handoff $lastSeenHash
             $lastText = ""
