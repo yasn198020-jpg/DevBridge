@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const settings = JSON.parse(readFileSync(path.join(root, "config/settings.json"), "utf8"));
 const profile = path.resolve(root, settings.browser?.profileDirectory || "browser-profile");
+const executablePath = process.env.DEVBRIDGE_BROWSER_EXECUTABLE || settings.browser?.executablePath || "";
 const channel = process.env.DEVBRIDGE_BROWSER_CHANNEL || settings.browser?.channel || "msedge";
 const chatUrl = process.env.DEVBRIDGE_CHAT_URL || settings.browser?.chatUrl || "https://chatgpt.com/";
 const headless = settings.browser?.headless === true;
@@ -18,9 +19,12 @@ function output(value) {
 }
 async function ensureBrowser() {
   if (context && page && !page.isClosed()) return;
-  context = await chromium.launchPersistentContext(profile, {
-    channel, headless, viewport: null, args: ["--start-maximized"]
-  });
+  const launchOptions = {
+    headless, viewport: null, args: ["--start-maximized"]
+  };
+  if (executablePath) launchOptions.executablePath = executablePath;
+  else launchOptions.channel = channel;
+  context = await chromium.launchPersistentContext(profile, launchOptions);
   page = context.pages()[0] || await context.newPage();
   if (!page.url().startsWith("https://chatgpt.com/")) {
     await page.goto(chatUrl, { waitUntil: "domcontentloaded" });
