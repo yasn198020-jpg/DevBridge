@@ -13,6 +13,13 @@
         "scripts\\build.ps1"
       ],
       "workingDirectory": ".",
+      "versionSource": {
+        "url": "https://raw.githubusercontent.com/owner/updates-repo/android-channel/version.json",
+        "field": "versionCode",
+        "increment": 1,
+        "minimum": 1,
+        "placeholder": "{VERSION_CODE}"
+      },
       "enabled": false
     }
   ]
