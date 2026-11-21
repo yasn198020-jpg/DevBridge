@@ -69,6 +69,7 @@ See `config/settings.json` and `config/projects.example.json`. Keep your actual 
 ## Known limitations
 
 - Browser selectors can change when ChatGPT's UI changes.
-- ChatGPT generation-complete detection is currently based on a stable last-message snapshot, not a guaranteed internal completion signal.
-- Handoff/chat rotation is not yet implemented.
+- ChatGPT generation-complete detection is based on a stable last-message snapshot, not a guaranteed internal completion signal.
+- Long-chat handoff is triggered by an approximate character count of message text visible in the page. It is not a token counter and cannot see hidden system context or attachments.
+- Handoff opens a new chat only after receiving the required summary marker and verifying that the new conversation is blank. UI changes can still interrupt this process.
 - The prototype has not yet been tested on the user's Windows machine or against their actual build scripts.
