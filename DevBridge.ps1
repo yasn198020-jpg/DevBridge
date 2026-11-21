@@ -104,7 +104,7 @@ If you need to pause, end with DEVBRIDGE: WAIT.
 "@
     Invoke-Bridge $script:BrowserProcess "send" $report | Out-Null
 }
-function Invoke-Handoff([string]$PreviousAssistantHash) {
+function Invoke-Handoff([string]$PreviousAssistantHash, [string]$PendingCommand = "NONE") {
     $handoffPrompt = @"
 Prepare a handoff summary for continuing this exact development task in a NEW ChatGPT conversation.
 Begin your response with this exact first line:
@@ -118,6 +118,7 @@ Include:
 - build results and unresolved errors
 - what is currently being attempted
 - the single most useful next action
+- pending DevBridge action at handoff time: $PendingCommand
 - any important instructions needed to avoid repeating work
 
 Be concise but preserve technical details. Do not claim anything was tested unless a build report confirms it. Do not include a DevBridge command line.
@@ -152,6 +153,8 @@ Be concise but preserve technical details. Do not claim anything was tested unle
     Invoke-Bridge $script:BrowserProcess "newchat" | Out-Null
     $continuation = @"
 We are continuing an existing development task. Read this handoff carefully and continue from the stated next action. Do not repeat completed work. Keep using the same repository and exact branch. Follow the DevBridge command protocol: when a local build is needed, finish your response with DEVBRIDGE: BUILD; when the task and build are complete, use DEVBRIDGE: DONE.
+
+Pending DevBridge action: $PendingCommand. If it is BUILD, do not repeat source edits; simply resume by ending your response with DEVBRIDGE: BUILD.
 
 $summary
 "@
@@ -250,26 +253,32 @@ try {
         if ($hash -eq $lastSeenHash) { continue }
         $lastSeenHash = $hash
         $command = Get-CommandFromMessage $message
+        if ($command -eq "DONE") {
+            Write-Log "Assistant marked task DONE."
+            break
+        }
+        if ($command -eq "ABORT") { throw "Assistant requested ABORT." }
+
+        $handoffThreshold = [int]$settings.automation.handoffAtConversationCharacters
+        if ($handoffThreshold -gt 0 -and [int]$snapshot.conversationCharacters -ge $handoffThreshold) {
+            $pendingCommand = if ($command -eq "BUILD") { "BUILD" } else { "NONE" }
+            Write-Log "Conversation reached approximately $($snapshot.conversationCharacters) characters; starting handoff (pending: $pendingCommand)."
+            $lastSeenHash = Invoke-Handoff $lastSeenHash $pendingCommand
+            $lastText = ""
+            $stableCount = 0
+            continue
+        }
+
         if ($command) {
             Write-Log "Received command: $command"
             switch ($command) {
                 "WAIT" { Write-Log "Assistant requested WAIT. Monitoring continues." }
-                "DONE" { Write-Log "Assistant marked task DONE." }
-                "ABORT" { throw "Assistant requested ABORT." }
                 "BUILD" {
                     $cycles++
                     if ($cycles -gt $maxCycles) { throw "Maximum build cycle count ($maxCycles) reached." }
                     Invoke-OneBuild
                 }
             }
-            if ($command -eq "DONE") { break }
-        }
-        $handoffThreshold = [int]$settings.automation.handoffAtConversationCharacters
-        if ($command -ne "BUILD" -and $handoffThreshold -gt 0 -and [int]$snapshot.conversationCharacters -ge $handoffThreshold) {
-            Write-Log "Conversation reached approximately $($snapshot.conversationCharacters) characters; starting handoff."
-            $lastSeenHash = Invoke-Handoff $lastSeenHash
-            $lastText = ""
-            $stableCount = 0
         }
     }
 } finally {
