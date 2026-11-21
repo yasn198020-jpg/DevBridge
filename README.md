@@ -1,6 +1,6 @@
 # DevBridge
 
-DevBridge is a local Windows helper that connects a normal ChatGPT browser session to local Git checkouts and build scripts.
+DevBridge is a local Windows helper that connects a normal ChatGPT browser session to local Git checkouts and build scripts. ChatGPT's existing GitHub integration performs source edits; DevBridge only uses ordinary local Git commands (`fetch` and fast-forward-only `pull`). It does not use GitHub API credentials or tokens.
 
 ## Current implementation status
 
