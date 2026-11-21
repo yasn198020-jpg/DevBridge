@@ -9,8 +9,6 @@
   "automation": {
     "pollIntervalSeconds": 5,
     "maxBuildCycles": 12,
-    "maxAssistantMessageCharacters": 120000,
-    "handoffAtAssistantCharacters": 85000,
     "stopOnUnknownCommand": true,
     "requireNewCommitForBuild": true
   },
