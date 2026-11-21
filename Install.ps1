@@ -19,8 +19,8 @@ if (-not ($edgePaths | Where-Object { Test-Path $_ })) {
 }
 Push-Location $Root
 try {
-    npm install
-    if ($LASTEXITCODE -ne 0) { throw "npm install failed with exit code $LASTEXITCODE." }
+    npm install --no-package-lock
+    if ($LASTEXITCODE -ne 0) { throw "npm install --no-package-lock failed with exit code $LASTEXITCODE." }
     $projectsPath = Join-Path $Root "config/projects.json"
     if (-not (Test-Path $projectsPath)) {
         Copy-Item (Join-Path $Root "config/projects.example.json") $projectsPath
