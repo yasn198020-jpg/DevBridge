@@ -49,9 +49,22 @@ async function sendMessage(text) {
 async function handle(command) {
   await ensureBrowser();
   switch (command.op) {
-    case "snapshot":
-      output({ ok: true, url: page.url(), assistantText: await lastAssistantMessage() });
+    case "snapshot": {
+      const messages = page.locator('[data-message-author-role]');
+      const count = await messages.count();
+      let conversationCharacters = 0;
+      for (let i = 0; i < count; i++) {
+        conversationCharacters += (await messages.nth(i).innerText()).length;
+      }
+      output({
+        ok: true,
+        url: page.url(),
+        assistantText: await lastAssistantMessage(),
+        conversationCharacters,
+        conversationMessageCount: count
+      });
       return;
+    }
     case "send":
       if (typeof command.text !== "string" || !command.text.trim()) {
         throw new Error("send requires text.");
