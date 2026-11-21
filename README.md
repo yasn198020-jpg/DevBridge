@@ -25,7 +25,7 @@ The ChatGPT page selectors are UI-dependent. Test them manually before relying o
 
 1. Clone this repository.
 2. Run `.Install.ps1` from PowerShell.
-3. Copy `config/projects.example.json` to `config/projects.json`.
+3. The installer creates `config/projects.json` from the example if it does not exist.
 4. Edit the project path, branch, build command, arguments and working directory.
 5. Run a preflight: `.DevBridge.ps1 -Project "Your project name" -CheckOnly`.
 6. Run `.DevBridge.ps1 -Project "Your project name"`.
