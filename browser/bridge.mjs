@@ -31,7 +31,10 @@ async function lastAssistantMessage() {
   const messages = page.locator('[data-message-author-role="assistant"]');
   const count = await messages.count();
   if (!count) return "";
-  return (await messages.nth(count - 1).innerText()).trim();
+  const last = messages.nth(count - 1);
+  const markdown = last.locator(".markdown");
+  if (await markdown.count()) return (await markdown.last().innerText()).trim();
+  return (await last.innerText()).trim();
 }
 async function sendMessage(text) {
   const editor = page.locator("#prompt-textarea").last();
