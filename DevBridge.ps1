@@ -52,6 +52,7 @@ function Start-Bridge {
     return $p
 }
 function Invoke-Bridge($Process, $Operation, $Text = $null) {
+    if ($Process.HasExited) { throw "Browser bridge process has exited (code $($Process.ExitCode))." }
     $request = @{ op = $Operation }
     if ($null -ne $Text) { $request.text = $Text }
     $Process.StandardInput.WriteLine(($request | ConvertTo-Json -Compress))
