@@ -1,0 +1,21 @@
+{
+  "browser": {
+    "channel": "msedge",
+    "profileDirectory": "browser-profile",
+    "chatUrl": "https://chatgpt.com/",
+    "headless": false,
+    "manualLoginWaitSeconds": 120
+  },
+  "automation": {
+    "pollIntervalSeconds": 5,
+    "maxBuildCycles": 12,
+    "maxAssistantMessageCharacters": 120000,
+    "handoffAtAssistantCharacters": 85000,
+    "stopOnUnknownCommand": true,
+    "requireNewCommitForBuild": true
+  },
+  "paths": {
+    "logs": "logs",
+    "state": "state"
+  }
+}
