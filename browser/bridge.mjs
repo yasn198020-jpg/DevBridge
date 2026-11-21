@@ -72,10 +72,16 @@ async function handle(command) {
       await sendMessage(command.text);
       output({ ok: true });
       return;
-    case "newchat":
+    case "newchat": {
       await page.goto(chatUrl, { waitUntil: "domcontentloaded" });
+      await page.waitForTimeout(1200);
+      const remainingMessages = await page.locator('[data-message-author-role]').count();
+      if (remainingMessages > 0) {
+        throw new Error("ChatGPT did not open a blank conversation; refusing to send handoff into the previous chat.");
+      }
       output({ ok: true, url: page.url() });
       return;
+    }
     case "quit":
       output({ ok: true });
       await context.close();
