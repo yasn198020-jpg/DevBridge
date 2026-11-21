@@ -24,11 +24,11 @@ The ChatGPT page selectors are UI-dependent. Test them manually before relying o
 ## First setup
 
 1. Clone this repository.
-2. Run `.\\Install.ps1` from PowerShell.
+2. Run `.\Install.ps1` from PowerShell.
 3. The installer creates `config/projects.json` from the example if it does not exist.
 4. Edit the project path, branch, build command, arguments and working directory.
-5. Run a preflight: `.\\DevBridge.ps1 -Project "Your project name" -CheckOnly`.
-6. Run `.\\DevBridge.ps1 -Project "Your project name"`.
+5. Run a preflight: `.\DevBridge.ps1 -Project "Your project name" -CheckOnly`.
+6. Run `.\DevBridge.ps1 -Project "Your project name"`.
 7. Alternatively, start the monitor with `Run-DevBridge.cmd -Project "Your project name"`.
 8. Sign in to ChatGPT in the opened Edge window if required. Start or open the intended conversation and give ChatGPT the development task.
 
