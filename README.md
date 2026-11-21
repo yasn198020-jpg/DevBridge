@@ -30,7 +30,8 @@ The ChatGPT page selectors are UI-dependent. Test them manually before relying o
 5. Run a preflight: `.\DevBridge.ps1 -Project "Your project name" -CheckOnly`.
 6. Run `.\DevBridge.ps1 -Project "Your project name"`.
 7. Alternatively, start the monitor with `Run-DevBridge.cmd -Project "Your project name"`.
-8. Sign in to ChatGPT in the opened Edge window if required. Start or open the intended conversation and give ChatGPT the development task.
+8. Sign in to ChatGPT in the opened Edge window if required, then open the intended conversation.
+9. Return to the PowerShell window and press Enter. DevBridge captures the current message as a baseline, so old commands in the chat will not run. Now give ChatGPT the development task.
 
 The controller snapshots the currently visible last assistant message as its baseline. It deliberately ignores old commands. After startup, ChatGPT must produce a fresh command line.
 
