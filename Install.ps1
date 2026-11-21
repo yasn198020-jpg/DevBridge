@@ -15,7 +15,7 @@ if ($env:ProgramFiles) {
     $edgePaths += Join-Path $env:ProgramFiles "Microsoft\Edge\Application\msedge.exe"
 }
 if (-not ($edgePaths | Where-Object { Test-Path $_ })) {
-    Write-Warning "Microsoft Edge was not found in the standard install folders. Playwright may still locate it if installed elsewhere."
+    throw "Microsoft Edge was not found. Install Edge or change browser.channel to an installed Playwright-supported browser before setup."
 }
 Push-Location $Root
 try {
