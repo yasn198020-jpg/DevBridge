@@ -10,7 +10,9 @@
     "pollIntervalSeconds": 5,
     "maxBuildCycles": 12,
     "stopOnUnknownCommand": true,
-    "requireNewCommitForBuild": true
+    "requireNewCommitForBuild": true,
+    "handoffAtConversationCharacters": 80000,
+    "handoffWaitSeconds": 300
   },
   "paths": {
     "logs": "logs",
