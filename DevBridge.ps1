@@ -104,6 +104,18 @@ If you need to pause, end with DEVBRIDGE: WAIT.
 "@
     Invoke-Bridge $script:BrowserProcess "send" $report | Out-Null
 }
+function Assert-LastBuildCurrent {
+    if (-not $script:HasBuildResult -or $script:LastBuildExitCode -ne 0 -or -not $script:LastBuiltCommit) {
+        throw "DONE rejected: no successful local build has been reported in this run."
+    }
+    Assert-RepositorySafe
+    Invoke-Git $repo @("fetch", "origin", $expectedBranch) | Out-Null
+    $head = (Invoke-Git $repo @("rev-parse", "HEAD") | Select-Object -First 1).Trim()
+    $remote = (Invoke-Git $repo @("rev-parse", "origin/$expectedBranch") | Select-Object -First 1).Trim()
+    if ($head -ne $remote -or $head -ne $script:LastBuiltCommit) {
+        throw "DONE rejected: the configured branch has changed since the last successful build. ChatGPT must issue DEVBRIDGE: BUILD again."
+    }
+}
 function Invoke-Handoff([string]$PreviousAssistantHash, [string]$PendingCommand = "NONE") {
     $handoffPrompt = @"
 Prepare a handoff summary for continuing this exact development task in a NEW ChatGPT conversation.
@@ -201,6 +213,7 @@ function Invoke-OneBuild {
     } finally { Pop-Location }
     $logText = if (Test-Path $buildLog) { Get-Content $buildLog -Raw } else { "(No build output was captured.)" }
     $script:LastBuildExitCode = [int]$exitCode
+    $script:LastBuiltCommit = $commit
     $script:HasBuildResult = $true
     Write-Log "Build finished with exit code $exitCode"
     Send-BuildReport $commit $exitCode $logText
@@ -261,10 +274,8 @@ try {
         $lastSeenHash = $hash
         $command = Get-CommandFromMessage $message
         if ($command -eq "DONE") {
-            if (-not $script:HasBuildResult -or $script:LastBuildExitCode -ne 0) {
-                throw "DONE rejected: no successful local build has been reported in this run."
-            }
-            Write-Log "Assistant marked task DONE after a successful local build."
+            Assert-LastBuildCurrent
+            Write-Log "Assistant marked task DONE after the latest remote commit passed the local build."
             break
         }
         if ($command -eq "ABORT") { throw "Assistant requested ABORT." }
