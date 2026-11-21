@@ -3,19 +3,12 @@
     "channel": "msedge",
     "profileDirectory": "browser-profile",
     "chatUrl": "https://chatgpt.com/",
-    "headless": false,
-    "manualLoginWaitSeconds": 120
+    "headless": false
   },
   "automation": {
     "pollIntervalSeconds": 5,
     "maxBuildCycles": 12,
-    "stopOnUnknownCommand": true,
-    "requireNewCommitForBuild": true,
     "handoffAtConversationCharacters": 80000,
     "handoffWaitSeconds": 300
-  },
-  "paths": {
-    "logs": "logs",
-    "state": "state"
   }
 }
