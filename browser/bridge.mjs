@@ -31,20 +31,19 @@ async function lastAssistantMessage() {
   return (await messages.nth(count - 1).innerText()).trim();
 }
 async function sendMessage(text) {
-  const editor = page.locator('#prompt-textarea').last();
-  if (await editor.count()) {
-    await editor.fill(text);
-  } else {
-    const fallback = page.locator('[contenteditable="true"]').last();
-    if (!(await fallback.count())) throw new Error("ChatGPT composer not found; UI may have changed.");
-    await fallback.fill(text);
+  const editor = page.locator("#prompt-textarea").last();
+  let activeEditor;
+  if (await editor.count()) activeEditor = editor;
+  else activeEditor = page.locator('[contenteditable="true"]').last();
+  if (!(await activeEditor.count())) {
+    throw new Error("ChatGPT composer not found; UI may have changed.");
   }
+  await activeEditor.fill(text);
   const sendButton = page.locator('button[data-testid="send-button"]');
   if (await sendButton.count() && await sendButton.last().isEnabled()) {
     await sendButton.last().click();
   } else {
-    const activeEditor = page.locator('#prompt-textarea').last();
-    await (await activeEditor.count() ? activeEditor : page.locator('[contenteditable="true"]').last()).press("Enter");
+    await activeEditor.press("Enter");
   }
 }
 async function handle(command) {
@@ -54,7 +53,9 @@ async function handle(command) {
       output({ ok: true, url: page.url(), assistantText: await lastAssistantMessage() });
       return;
     case "send":
-      if (typeof command.text !== "string" || !command.text.trim()) throw new Error("send requires text.");
+      if (typeof command.text !== "string" || !command.text.trim()) {
+        throw new Error("send requires text.");
+      }
       await sendMessage(command.text);
       output({ ok: true });
       return;
@@ -75,6 +76,9 @@ async function handle(command) {
 const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 for await (const line of rl) {
   if (!line.trim()) continue;
-  try { await handle(JSON.parse(line)); }
-  catch (error) { output({ ok: false, error: String(error?.message || error) }); }
+  try {
+    await handle(JSON.parse(line));
+  } catch (error) {
+    output({ ok: false, error: String(error?.message || error) });
+  }
 }
