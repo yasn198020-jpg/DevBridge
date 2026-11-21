@@ -1,0 +1,9 @@
+node_modules/
+.playwright/
+browser-profile/
+logs/*
+!logs/.gitkeep
+state/*
+!state/.gitkeep
+.env
+*.user
