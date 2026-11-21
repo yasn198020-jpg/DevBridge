@@ -6,10 +6,14 @@ foreach ($tool in @("git", "node", "npm")) {
         throw "Required command '$tool' was not found on PATH. Install it and restart PowerShell."
     }
 }
-$edgePaths = @(
-    "$( [Environment]::GetEnvironmentVariable('ProgramFiles(x86)') )\Microsoft\Edge\Application\msedge.exe",
-    "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
-)
+$programFilesX86 = [Environment]::GetEnvironmentVariable("ProgramFiles(x86)")
+$edgePaths = @()
+if ($programFilesX86) {
+    $edgePaths += Join-Path $programFilesX86 "Microsoft\Edge\Application\msedge.exe"
+}
+if ($env:ProgramFiles) {
+    $edgePaths += Join-Path $env:ProgramFiles "Microsoft\Edge\Application\msedge.exe"
+}
 if (-not ($edgePaths | Where-Object { Test-Path $_ })) {
     Write-Warning "Microsoft Edge was not found in the standard install folders. Playwright may still locate it if installed elsewhere."
 }
