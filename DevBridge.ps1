@@ -200,6 +200,8 @@ function Invoke-OneBuild {
         $exitCode = 1
     } finally { Pop-Location }
     $logText = if (Test-Path $buildLog) { Get-Content $buildLog -Raw } else { "(No build output was captured.)" }
+    $script:LastBuildExitCode = [int]$exitCode
+    $script:HasBuildResult = $true
     Write-Log "Build finished with exit code $exitCode"
     Send-BuildReport $commit $exitCode $logText
 }
@@ -259,7 +261,10 @@ try {
         $lastSeenHash = $hash
         $command = Get-CommandFromMessage $message
         if ($command -eq "DONE") {
-            Write-Log "Assistant marked task DONE."
+            if (-not $script:HasBuildResult -or $script:LastBuildExitCode -ne 0) {
+                throw "DONE rejected: no successful local build has been reported in this run."
+            }
+            Write-Log "Assistant marked task DONE after a successful local build."
             break
         }
         if ($command -eq "ABORT") { throw "Assistant requested ABORT." }
