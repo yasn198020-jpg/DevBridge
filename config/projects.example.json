@@ -1,16 +1,31 @@
 {
   "projects": [
     {
-      "name": "Example Android project",
-      "repository": "C:\\work\\ExampleProject",
-      "branch": "feature/my-work",
+      "name": "ESP32 Android 5.1.1",
+      "repository": "C:\\tep\\git\\ESP32-AI-Control",
+      "branch": "compat/android-5.1.1-api22-vosk",
       "buildCommand": "powershell.exe",
       "buildArguments": [
         "-NoProfile",
         "-ExecutionPolicy",
         "Bypass",
         "-File",
-        "scripts\\build.ps1"
+        "scripts\\build-publish-android511.ps1"
+      ],
+      "workingDirectory": ".",
+      "enabled": false
+    },
+    {
+      "name": "Windows Phone 8.1",
+      "repository": "I:\\tep\\git\\ESP32-AI-Control-WP81",
+      "branch": "ui/lumia830-dashboard-test",
+      "buildCommand": "powershell.exe",
+      "buildArguments": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "Write-Error 'Replace this placeholder with the actual MSBuild script or command.'"
       ],
       "workingDirectory": ".",
       "enabled": false
