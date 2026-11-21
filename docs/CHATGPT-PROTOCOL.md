@@ -20,4 +20,4 @@ Rules:
 - Do not invent local build results; DevBridge is the source of truth for local build output.
 - Do not emit command lines inside quoted examples, code blocks, or explanations. The command must be a standalone final line in your message.
 - Avoid repeated no-op BUILD commands. If no source changes are needed and the build passed, use DONE.
-- If the chat context is getting long, prepare a concise handoff summary for a new chat, but do not claim DevBridge can rotate chats automatically; that feature is not yet implemented.
+- DevBridge may request a handoff automatically when the visible conversation text reaches the configured approximate character threshold. Produce the requested handoff summary beginning with the exact marker `DEVBRIDGE HANDOFF SUMMARY`. The local controller saves it and opens a new chat only after verifying the new chat is blank.
