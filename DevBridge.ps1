@@ -136,7 +136,8 @@ Be concise but preserve technical details. Do not claim anything was tested unle
         $snap = Invoke-Bridge $script:BrowserProcess "snapshot"
         $candidate = [string]$snap.assistantText
         if (-not $candidate) { continue }
-        if ((Get-MessageHash $candidate) -eq $PreviousAssistantHash) { continue }
+        $candidateHash = Get-MessageHash ("$($snap.conversationMessageCount)|" + $candidate)
+        if ($candidateHash -eq $PreviousAssistantHash) { continue }
         if ($candidate -eq $previousText) { $stable++ } else { $previousText = $candidate; $stable = 0 }
         if ($stable -lt 3) { continue }
         if ($candidate -match '^DEVBRIDGE HANDOFF SUMMARY(?:\r?\n|$)') {
@@ -162,7 +163,7 @@ $summary
     Start-Sleep -Seconds 2
     $newChatSnapshot = Invoke-Bridge $script:BrowserProcess "snapshot"
     Write-Log "Opened a new chat and transferred the handoff summary."
-    return (Get-MessageHash ([string]$newChatSnapshot.assistantText))
+    return (Get-MessageHash ("$($newChatSnapshot.conversationMessageCount)|" + [string]$newChatSnapshot.assistantText))
 }
 function Invoke-OneBuild {
     Assert-RepositorySafe
@@ -235,7 +236,7 @@ $script:BrowserProcess = Start-Bridge
 try {
     Write-Log "Opening ChatGPT browser. Sign in manually if needed."
     $snapshot = Invoke-Bridge $script:BrowserProcess "snapshot"
-    $lastSeenHash = Get-MessageHash ([string]$snapshot.assistantText)
+    $lastSeenHash = Get-MessageHash ("$($snapshot.conversationMessageCount)|" + [string]$snapshot.assistantText)
     Write-Log "Waiting for a NEW assistant message ending with a DevBridge command."
     $cycles = 0
     $pollSeconds = [Math]::Max(2, [int]$settings.automation.pollIntervalSeconds)
@@ -249,7 +250,7 @@ try {
         if (-not $message) { continue }
         if ($message -eq $lastText) { $stableCount++ } else { $lastText = $message; $stableCount = 0 }
         if ($stableCount -lt 1) { continue }
-        $hash = Get-MessageHash $message
+        $hash = Get-MessageHash ("$($snapshot.conversationMessageCount)|" + $message)
         if ($hash -eq $lastSeenHash) { continue }
         $lastSeenHash = $hash
         $command = Get-CommandFromMessage $message
