@@ -6,31 +6,46 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const settings = JSON.parse(readFileSync(path.join(root, "config/settings.json"), "utf8"));
-const profile = path.resolve(root, settings.browser?.profileDirectory || "browser-profile");
-const executablePath = process.env.DEVBRIDGE_BROWSER_EXECUTABLE || settings.browser?.executablePath || "";
-const channel = process.env.DEVBRIDGE_BROWSER_CHANNEL || settings.browser?.channel || "msedge";
+const cdpUrl = process.env.DEVBRIDGE_CDP_URL || settings.browser?.cdpUrl || "http://127.0.0.1:9222";
 const chatUrl = process.env.DEVBRIDGE_CHAT_URL || settings.browser?.chatUrl || "https://chatgpt.com/";
-const headless = settings.browser?.headless === true;
+let browser;
 let context;
 let page;
 
 function output(value) {
   process.stdout.write(JSON.stringify(value) + "\n");
 }
+
 async function ensureBrowser() {
-  if (context && page && !page.isClosed()) return;
-  const launchOptions = {
-    headless, viewport: null, args: ["--start-maximized"]
-  };
-  if (executablePath) launchOptions.executablePath = executablePath;
-  else launchOptions.channel = channel;
-  context = await chromium.launchPersistentContext(profile, launchOptions);
-  page = context.pages()[0] || await context.newPage();
-  if (!page.url().startsWith("https://chatgpt.com/")) {
-    await page.goto(chatUrl, { waitUntil: "domcontentloaded" });
+  if (page && !page.isClosed()) return;
+
+  browser = await chromium.connectOverCDP(cdpUrl);
+  const contexts = browser.contexts();
+  if (!contexts.length) {
+    throw new Error("CDP connected, but the browser has no accessible context.");
   }
-  await page.waitForTimeout(1500);
+
+  context = contexts[0];
+  const pages = context.pages();
+  page = pages.find(candidate => {
+    try {
+      return new URL(candidate.url()).origin === new URL(chatUrl).origin;
+    } catch {
+      return false;
+    }
+  });
+
+  if (!page) {
+    const openPages = pages.map(candidate => candidate.url()).filter(Boolean);
+    throw new Error(
+      "CDP connected, but no ChatGPT tab was found. Open ChatGPT in this browser first. " +
+      "Visible pages: " + (openPages.join(", ") || "(none)")
+    );
+  }
+
+  await page.waitForLoadState("domcontentloaded").catch(() => {});
 }
+
 async function lastAssistantMessage() {
   const messages = page.locator('[data-message-author-role="assistant"]');
   const count = await messages.count();
@@ -40,6 +55,7 @@ async function lastAssistantMessage() {
   if (await markdown.count()) return (await markdown.last().innerText()).trim();
   return (await last.innerText()).trim();
 }
+
 async function sendMessage(text) {
   const editor = page.locator("#prompt-textarea").last();
   let activeEditor;
@@ -56,7 +72,18 @@ async function sendMessage(text) {
     await activeEditor.press("Enter");
   }
 }
+
 async function handle(command) {
+  if (command.op === "quit") {
+    output({ ok: true, disconnected: true });
+    // Do not close the user's browser, context, pages, or tabs.
+    // The parent closes stdin and terminates this bridge process after this reply.
+    browser = undefined;
+    context = undefined;
+    page = undefined;
+    return;
+  }
+
   await ensureBrowser();
   switch (command.op) {
     case "snapshot": {
@@ -92,16 +119,11 @@ async function handle(command) {
       output({ ok: true, url: page.url() });
       return;
     }
-    case "quit":
-      output({ ok: true });
-      await context.close();
-      context = undefined;
-      page = undefined;
-      return;
     default:
       throw new Error("Unknown operation: " + command.op);
   }
 }
+
 const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 for await (const line of rl) {
   if (!line.trim()) continue;
