@@ -48,7 +48,7 @@ DEVBRIDGE: ABORT
 
 - `BUILD`: fetch the configured remote branch, fast-forward only, run the configured build, and send the build report into the same chat.
 - `WAIT`: do not build; continue monitoring for a later assistant command.
-- `DONE`: stop normally.
+- `DONE`: stop only if the latest remote branch commit is exactly the commit that passed the local build.
 - `ABORT`: stop immediately.
 
 A command in an older message, user message, quoted block or partial substring is not accepted. The last assistant message must stabilize across polling before processing.
