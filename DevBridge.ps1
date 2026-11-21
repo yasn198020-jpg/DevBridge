@@ -179,6 +179,64 @@ $summary
     Write-Log "Opened a new chat and transferred the handoff summary."
     return (Get-MessageHash ("$($newChatSnapshot.conversationMessageCount)|" + [string]$newChatSnapshot.assistantText))
 }
+function Get-NextBuildVersion {
+    if (-not $selected.versionSource) { return $null }
+
+    $source = $selected.versionSource
+    $url = [string]$source.url
+    $field = [string]$source.field
+    $increment = if ($null -ne $source.increment) { [int]$source.increment } else { 1 }
+    $minimum = if ($null -ne $source.minimum) { [int]$source.minimum } else { 1 }
+
+    if ($url -notmatch '^https://') { throw "versionSource.url must use HTTPS." }
+    if (-not $field) { throw "versionSource.field is required." }
+    if ($increment -lt 1) { throw "versionSource.increment must be at least 1." }
+    if ($minimum -lt 1) { throw "versionSource.minimum must be at least 1." }
+
+    # Windows PowerShell 5.1 may otherwise negotiate obsolete TLS defaults.
+    $oldProtocol = [Net.ServicePointManager]::SecurityProtocol
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $document = Invoke-RestMethod -Uri $url -Method Get -UseBasicParsing -TimeoutSec 20
+    } catch {
+        throw "Could not read build version from '$url': $($_.Exception.Message). Build was not started."
+    } finally {
+        [Net.ServicePointManager]::SecurityProtocol = $oldProtocol
+    }
+
+    $property = $document.PSObject.Properties[$field]
+    if (-not $property) { throw "Version field '$field' was not found in '$url'. Build was not started." }
+
+    $current = 0L
+    if (-not [long]::TryParse([string]$property.Value, [ref]$current) -or $current -lt $minimum) {
+        throw "Invalid published version '$($property.Value)' in field '$field'. Minimum allowed is $minimum. Build was not started."
+    }
+    $next = $current + [long]$increment
+    if ($next -gt 2147483647) { throw "Next version $next exceeds the supported Int32 range." }
+
+    return [pscustomobject]@{
+        Current = [int]$current
+        Next = [int]$next
+        Placeholder = [string]$source.placeholder
+    }
+}
+function Resolve-BuildArguments($VersionInfo) {
+    $arguments = @($selected.buildArguments | ForEach-Object { [string]$_ })
+    if ($null -eq $VersionInfo) { return ,$arguments }
+
+    if (-not $VersionInfo.Placeholder) {
+        throw "versionSource.placeholder is required when automatic versioning is enabled."
+    }
+    $matches = @($arguments | Where-Object { $_.Contains($VersionInfo.Placeholder) }).Count
+    if ($matches -ne 1) {
+        throw "buildArguments must contain versionSource.placeholder exactly once ('$($VersionInfo.Placeholder)')."
+    }
+
+    for ($i = 0; $i -lt $arguments.Count; $i++) {
+        $arguments[$i] = $arguments[$i].Replace($VersionInfo.Placeholder, [string]$VersionInfo.Next)
+    }
+    return ,$arguments
+}
 function Invoke-OneBuild {
     Assert-RepositorySafe
     Write-Log "Fetching origin/$expectedBranch"
@@ -196,8 +254,12 @@ function Invoke-OneBuild {
     }
     Assert-RepositorySafe
     $commit = (Invoke-Git $repo @("rev-parse", "HEAD") | Select-Object -First 1).Trim()
+    $versionInfo = Get-NextBuildVersion
+    if ($null -ne $versionInfo) {
+        Write-Log "Published version: $($versionInfo.Current); next build version: $($versionInfo.Next)"
+    }
     $buildCommand = [string]$selected.buildCommand
-    $buildArgs = @($selected.buildArguments)
+    $buildArgs = Resolve-BuildArguments $versionInfo
     $working = if ($selected.workingDirectory -and $selected.workingDirectory -ne ".") {
         Join-Path $repo ([string]$selected.workingDirectory)
     } else { $repo }
@@ -248,6 +310,12 @@ Assert-RepositorySafe
 Write-Log "Selected project '$($selected.name)' on branch '$expectedBranch'."
 
 if ($CheckOnly) {
+    $versionInfo = Get-NextBuildVersion
+    if ($null -ne $versionInfo) {
+        # Validate placeholder and show the exact version without starting a build.
+        [void](Resolve-BuildArguments $versionInfo)
+        Write-Log "Version check passed. Published: $($versionInfo.Current); next build: $($versionInfo.Next)"
+    }
     Write-Log "Preflight passed. No browser or build was started."
     exit 0
 }
