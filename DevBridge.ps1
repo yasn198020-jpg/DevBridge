@@ -224,6 +224,9 @@ $expectedBranch = [string]$selected.branch
 if (-not (Test-Path -LiteralPath (Join-Path $repo ".git"))) { throw "Not a Git working tree: $repo" }
 if (-not $expectedBranch) { throw "Project branch is not configured." }
 if (-not $selected.buildCommand) { throw "Project buildCommand is not configured." }
+if (-not (Get-Command ([string]$selected.buildCommand) -ErrorAction SilentlyContinue)) {
+    throw "Build command '$($selected.buildCommand)' was not found on PATH. Use an installed command or an absolute executable path."
+}
 Assert-RepositorySafe
 Write-Log "Selected project '$($selected.name)' on branch '$expectedBranch'."
 
