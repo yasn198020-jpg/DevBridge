@@ -44,7 +44,7 @@ function Start-Bridge {
     $psi.UseShellExecute = $false
     $psi.RedirectStandardInput = $true
     $psi.RedirectStandardOutput = $true
-    $psi.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $psi.StandardOutputEncoding = New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false
     $psi.CreateNoWindow = $true
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $psi
