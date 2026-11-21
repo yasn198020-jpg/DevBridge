@@ -1,9 +1,9 @@
 {
   "browser": {
-    "channel": "msedge",
     "profileDirectory": "browser-profile",
     "chatUrl": "https://chatgpt.com/",
-    "headless": false
+    "headless": false,
+    "executablePath": "C:\\\\Program Files\\\\Yandex\\\\YandexBrowser\\\\Application\\\\browser.exe"
   },
   "automation": {
     "pollIntervalSeconds": 5,
