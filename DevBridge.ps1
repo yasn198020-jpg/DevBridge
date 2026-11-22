@@ -84,7 +84,7 @@ function Get-CommandFromMessage([string]$Message) {
     $lines = @($plain -split "`r?`n" | Where-Object { $_.Trim() })
     if ($lines.Count -eq 0) { return $null }
     $lastLine = $lines[$lines.Count - 1].Trim()
-    if ($lastLine -match '^DEVBRIDGE:\s*(BUILD(?:\s+READY)?|WAIT|DONE|ABORT)\s*$') {
+    if ($lastLine -match '^DEVBRIDGE:\s*(BUILD(?:\s+READY)?|WAIT|ABORT)\s*$') {
         $command = $Matches[1].ToUpperInvariant() -replace '\s+', ' '
         if ($command -eq "BUILD READY") { return "BUILD" }
         return $command
@@ -116,22 +116,10 @@ $LogText
 --------------------
 
 Inspect the result. If code changes are needed, commit them to this same repository and branch, then end your reply with the standalone line DEVBRIDGE: BUILD READY. The older DEVBRIDGE: BUILD command is also accepted.
-If the task is complete and this build passed, end with DEVBRIDGE: DONE.
+When the task is complete, no completion command is required; DevBridge remains available for the next build.
 If you need to pause, end with DEVBRIDGE: WAIT.
 "@
     Invoke-Bridge $script:BrowserProcess "send" $report $ConversationId | Out-Null
-}
-function Assert-LastBuildCurrent {
-    if (-not $script:HasBuildResult -or $script:LastBuildExitCode -ne 0 -or -not $script:LastBuiltCommit) {
-        throw "DONE rejected: no successful local build has been reported in this run."
-    }
-    Assert-RepositorySafe
-    Invoke-Git $repo @("fetch", "origin", $expectedBranch) | Out-Null
-    $head = (Invoke-Git $repo @("rev-parse", "HEAD") | Select-Object -First 1).Trim()
-    $remote = (Invoke-Git $repo @("rev-parse", "origin/$expectedBranch") | Select-Object -First 1).Trim()
-    if ($head -ne $remote -or $head -ne $script:LastBuiltCommit) {
-        throw "DONE rejected: the configured branch has changed since the last successful build. ChatGPT must issue DEVBRIDGE: BUILD again."
-    }
 }
 function Invoke-Handoff([string]$PreviousAssistantHash, [string]$PendingCommand = "NONE", [string]$ConversationId = "") {
     $handoffPrompt = @"
@@ -182,7 +170,7 @@ Be concise but preserve technical details. Do not claim anything was tested unle
     Write-Log "Saved handoff summary to $handoffPath"
     Invoke-Bridge $script:BrowserProcess "newchat" $null $ConversationId | Out-Null
     $continuation = @"
-We are continuing an existing development task. Read this handoff carefully and continue from the stated next action. Do not repeat completed work. Keep using the same repository and exact branch. Follow the DevBridge command protocol: when a local build is needed and the complete commit batch is ready, finish your response with DEVBRIDGE: BUILD READY; when the task and build are complete, use DEVBRIDGE: DONE.
+We are continuing an existing development task. Read this handoff carefully and continue from the stated next action. Do not repeat completed work. Keep using the same repository and exact branch. Follow the DevBridge command protocol: when a local build is needed and the complete commit batch is ready, finish your response with DEVBRIDGE: BUILD READY; no completion command is used.
 
 Pending DevBridge action: $PendingCommand. If it is BUILD, do not repeat source edits; simply resume by ending your response with DEVBRIDGE: BUILD.
 
@@ -462,14 +450,6 @@ try {
         $chatHashes[$chatId] = $hash
         Save-ChatState
         $command = Get-CommandFromMessage $message
-        if ($command -eq "DONE") {
-            try { Assert-LastBuildCurrent; Write-Log "Assistant marked task DONE after successful latest build."; break }
-            catch {
-                $feedback = "DevBridge rejected DONE for safety: $($_.Exception.Message) Inspect repository state and use DEVBRIDGE: BUILD or DEVBRIDGE: WAIT."
-                Invoke-Bridge $script:BrowserProcess "send" $feedback $chatId | Out-Null
-                continue
-            }
-        }
         if ($command -eq "ABORT") { throw "Assistant requested ABORT." }
         $threshold = [int]$settings.automation.handoffAtConversationCharacters
         if ($threshold -gt 0 -and [int]$snapshot.conversationCharacters -ge $threshold) {
