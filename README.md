@@ -13,7 +13,7 @@ DevBridge connects a ChatGPT browser session to local Git checkouts and build sc
 3. Run .\DevBridge.ps1 -Project "Your project name" -CheckOnly.
 4. Test with .\DevBridge.ps1 -Project "Your project name".
 5. DevBridge launches the configured browser with a dedicated persistent profile in browser-profile. Sign in to ChatGPT manually once in that profile. It never automates passwords, CAPTCHA or MFA.
-6. Enable background startup at Windows sign-in with .\Install-Autostart.ps1. The task runs as the signed-in user, with a hidden PowerShell window; the browser remains visible.
+6. Enable background startup at Windows sign-in with .\Install-Autostart.ps1. If more than one project is configured, specify it explicitly, for example .\Install-Autostart.ps1 -Project "Android 5.1.1". The task runs as the signed-in user, with a hidden PowerShell window; the browser remains visible.
 7. Remove startup with .\Install-Autostart.ps1 -Uninstall.
 
 The dedicated browser profile is separate from your everyday browser profile, so it does not interfere with an already-running normal Yandex session.
