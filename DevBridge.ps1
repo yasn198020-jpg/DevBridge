@@ -188,8 +188,12 @@ Pending DevBridge action: $PendingCommand. If it is BUILD, do not repeat source 
 $summary
 "@
     Invoke-Bridge $script:BrowserProcess "send" $continuation | Out-Null
-    Start-Sleep -Seconds 2
-    $newChatSnapshot = Invoke-Bridge $script:BrowserProcess "snapshot"
+    $newChatSnapshot = $null
+    for ($attempt = 0; $attempt -lt 10; $attempt++) {
+        Start-Sleep -Seconds 1
+        $newChatSnapshot = Invoke-Bridge $script:BrowserProcess "snapshot"
+        if ($newChatSnapshot.conversationId) { break }
+    }
     Write-Log "Opened a new chat and transferred the handoff summary."
     return $newChatSnapshot
 }
@@ -419,10 +423,11 @@ try {
         if ($threshold -gt 0 -and [int]$snapshot.conversationCharacters -ge $threshold) {
             $pending = if ($command -eq "BUILD") { "BUILD" } else { "NONE" }
             Write-Log "Conversation reached handoff threshold; transferring to a new chat."
-            $handoffSnapshot = Invoke-Handoff $hash $pending $chatId
+            $legacyHash = Get-MessageHash ("$($snapshot.conversationMessageCount)|" + $message)
+            $handoffSnapshot = Invoke-Handoff $legacyHash $pending $chatId
             $handoffChatId = [string]$handoffSnapshot.conversationId
             if ($handoffChatId) {
-                $chatHashes[$handoffChatId] = Get-MessageHash ([string]$handoffSnapshot.assistantMessageId + "|" + [string]$handoffSnapshot.assistantText)
+                $chatHashes[$handoffChatId] = Get-MessageHash ("|")
                 Save-ChatState
             }
             $pendingKey = ""; $stable = 0
