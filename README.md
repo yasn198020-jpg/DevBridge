@@ -42,5 +42,7 @@ DevBridge never switches branches, refuses dirty working trees, uses git pull --
 ## Configuration
 See config/settings.json and config/projects.example.json. Actual projects config, browser profile, logs and state remain local and are ignored by Git. Optional versionSource supports incrementing a version from an HTTPS JSON manifest before build.
 
+For the Android 5.1.1 branch `compat/android-5.1.1-api22-vosk`, DevBridge automatically invokes the same `scripts/build-publish-android511.ps1` script used by the VS Code task. It resolves the next `VersionCode` from the configured `versionSource` manifest and passes it as `-VersionCode`; no interactive prompt is required. Keep the Android 5.1.1 `versionSource` configured to the `android-5.1.1/version.json` file in the updates repository.
+
 ## Limitations
 ChatGPT selectors and browser focus detection depend on the current UI/browser. Generation completion is inferred from a stable message snapshot. Handoff uses visible character count rather than tokens. Test the workflow before unattended use.
