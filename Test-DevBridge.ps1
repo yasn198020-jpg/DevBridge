@@ -38,6 +38,10 @@ if ($mainScript -match "Read-Host") { $failed = $true; Write-Host "FAIL Manual E
 else { Write-Host "PASS No manual Enter prompt." -ForegroundColor Green }
 if ($mainScript -notmatch "monitor-state\.json") { $failed = $true; Write-Host "FAIL Persistent conversation state is missing." -ForegroundColor Red }
 else { Write-Host "PASS Persistent conversation state is configured." -ForegroundColor Green }
+if ($mainScript -notmatch "build-publish-android511\.ps1" -or $mainScript -notmatch '"-VersionCode"' -or $mainScript -notmatch "versionInfo\.Next") {
+    $failed = $true
+    Write-Host "FAIL Android 5.1.1 must call the VS Code build script with an explicit VersionCode." -ForegroundColor Red
+} else { Write-Host "PASS Android 5.1.1 uses the VS Code build script with an explicit VersionCode." -ForegroundColor Green }
 
 if ($failed) { throw "DevBridge validation failed. Fix the reported errors before enabling autostart." }
 Write-Host "ALL STATIC CHECKS PASSED." -ForegroundColor Green
