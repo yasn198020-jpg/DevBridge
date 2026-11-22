@@ -286,12 +286,13 @@ function Invoke-OneBuild([string]$ConversationId) {
     $buildLog = Join-Path $LogRoot "last-build.log"
     Write-Log "Building commit $commit"
     Push-Location $working
+    $previousErrorActionPreference = $ErrorActionPreference
+    $previousNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
     try {
-        # Gradle writes normal diagnostics to stderr. In PowerShell 7.3+,
-        # PSNativeCommandUseErrorActionPreference can turn those lines into
-        # NativeCommandError records when ErrorActionPreference is Stop.
-        # Keep stderr in the captured build log, but let the process exit code
-        # determine whether the build succeeded.
+        # Native build tools commonly write informational output to stderr.
+        # Do not let PowerShell's Stop preference abort the pipeline: the
+        # actual native process exit code is the authoritative build result.
+        $ErrorActionPreference = "Continue"
         $PSNativeCommandUseErrorActionPreference = $false
         & $buildCommand @buildArgs 2>&1 | Tee-Object -FilePath $buildLog
         $exitCode = $LASTEXITCODE
@@ -299,7 +300,11 @@ function Invoke-OneBuild([string]$ConversationId) {
     } catch {
         $_ | Out-String | Tee-Object -FilePath $buildLog -Append
         $exitCode = 1
-    } finally { Pop-Location }
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+        $PSNativeCommandUseErrorActionPreference = $previousNativeErrorPreference
+        Pop-Location
+    }
     $logText = if (Test-Path $buildLog) { Get-Content $buildLog -Raw } else { "(No build output was captured.)" }
     $script:LastBuildExitCode = [int]$exitCode
     $script:LastBuiltCommit = $commit
