@@ -1,0 +1,15 @@
+{
+  "browser": {
+    "profileDirectory": "browser-profile",
+    "chatUrl": "https://chatgpt.com/",
+    "headless": false,
+    "executablePath": "C:\\Program Files\\Yandex\\YandexBrowser\\Application\\browser.exe",
+    "cdpUrl": "http://127.0.0.1:9222"
+  },
+  "automation": {
+    "pollIntervalSeconds": 5,
+    "maxBuildCycles": 12,
+    "handoffAtConversationCharacters": 80000,
+    "handoffWaitSeconds": 300
+  }
+}
