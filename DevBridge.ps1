@@ -62,10 +62,11 @@ function Start-Bridge {
     if (-not $p.Start()) { throw "Could not start browser bridge." }
     return $p
 }
-function Invoke-Bridge($Process, $Operation, $Text = $null) {
+function Invoke-Bridge($Process, $Operation, $Text = $null, $ConversationId = $null) {
     if ($Process.HasExited) { throw "Browser bridge process has exited (code $($Process.ExitCode))." }
     $request = @{ op = $Operation }
     if ($null -ne $Text) { $request.text = $Text }
+    if ($null -ne $ConversationId) { $request.conversationId = $ConversationId }
     $Process.StandardInput.WriteLine(($request | ConvertTo-Json -Compress))
     $Process.StandardInput.Flush()
     $task = $Process.StandardOutput.ReadLineAsync()
@@ -96,7 +97,7 @@ function Get-MessageHash([string]$Message) {
         return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace("-", "").ToLowerInvariant()
     } finally { $sha.Dispose() }
 }
-function Send-BuildReport([string]$Commit, [int]$ExitCode, [string]$LogText) {
+function Send-BuildReport([string]$Commit, [int]$ExitCode, [string]$LogText, [string]$ConversationId) {
     $limit = 18000
     if ($LogText.Length -gt $limit) { $LogText = $LogText.Substring($LogText.Length - $limit) }
     $statusText = if ($ExitCode -eq 0) { "BUILD SUCCEEDED" } else { "BUILD FAILED (exit $ExitCode)" }
@@ -117,7 +118,7 @@ Inspect the result. If code changes are needed, commit them to this same reposit
 If the task is complete and this build passed, end with DEVBRIDGE: DONE.
 If you need to pause, end with DEVBRIDGE: WAIT.
 "@
-    Invoke-Bridge $script:BrowserProcess "send" $report | Out-Null
+    Invoke-Bridge $script:BrowserProcess "send" $report $ConversationId | Out-Null
 }
 function Assert-LastBuildCurrent {
     if (-not $script:HasBuildResult -or $script:LastBuildExitCode -ne 0 -or -not $script:LastBuiltCommit) {
@@ -131,7 +132,7 @@ function Assert-LastBuildCurrent {
         throw "DONE rejected: the configured branch has changed since the last successful build. ChatGPT must issue DEVBRIDGE: BUILD again."
     }
 }
-function Invoke-Handoff([string]$PreviousAssistantHash, [string]$PendingCommand = "NONE") {
+function Invoke-Handoff([string]$PreviousAssistantHash, [string]$PendingCommand = "NONE", [string]$ConversationId = "") {
     $handoffPrompt = @"
 Prepare a handoff summary for continuing this exact development task in a NEW ChatGPT conversation.
 Begin your response with this exact first line:
@@ -150,7 +151,7 @@ Include:
 
 Be concise but preserve technical details. Do not claim anything was tested unless a build report confirms it. Do not include a DevBridge command line.
 "@
-    Invoke-Bridge $script:BrowserProcess "send" $handoffPrompt | Out-Null
+    Invoke-Bridge $script:BrowserProcess "send" $handoffPrompt $ConversationId | Out-Null
     $timeoutSeconds = [Math]::Max(60, [int]$settings.automation.handoffWaitSeconds)
     $deadline = (Get-Date).AddSeconds($timeoutSeconds)
     $previousText = ""
@@ -250,7 +251,7 @@ function Resolve-BuildArguments($VersionInfo) {
     }
     return ,$arguments
 }
-function Invoke-OneBuild {
+function Invoke-OneBuild([string]$ConversationId) {
     Assert-RepositorySafe
     Write-Log "Fetching origin/$expectedBranch"
     Invoke-Git $repo @("fetch", "origin", $expectedBranch) | Out-Null
@@ -293,7 +294,7 @@ function Invoke-OneBuild {
     $script:LastBuiltCommit = $commit
     $script:HasBuildResult = $true
     Write-Log "Build finished with exit code $exitCode"
-    Send-BuildReport $commit $exitCode $logText
+    Send-BuildReport $commit $exitCode $logText $ConversationId
 }
 
 if (-not (Test-Path $SettingsPath)) { throw "Missing config/settings.json" }
@@ -333,62 +334,103 @@ if ($CheckOnly) {
     exit 0
 }
 if (-not (Test-Path -LiteralPath $BridgePath)) { throw "Missing browser/bridge.mjs" }
+$browserExe = [string]$settings.browser.executablePath
+if (-not $browserExe -or -not (Test-Path -LiteralPath $browserExe)) { throw "Configured browser executable was not found: '$browserExe'." }
+$profileSetting = [string]$settings.browser.profileDirectory
+if (-not $profileSetting) { $profileSetting = "browser-profile" }
+$browserProfile = if ([IO.Path]::IsPathRooted($profileSetting)) { $profileSetting } else { Join-Path $Root $profileSetting }
+New-Item -ItemType Directory -Force -Path $browserProfile | Out-Null
+$cdpUrl = [string]$settings.browser.cdpUrl
+if (-not $cdpUrl) { $cdpUrl = "http://127.0.0.1:9222" }
+$cdpPort = 9222
+try { $cdpPort = [int]([uri]$cdpUrl).Port } catch {}
+$cdpReady = $false
+try { $null = Invoke-RestMethod -Uri ($cdpUrl.TrimEnd("/") + "/json/version") -TimeoutSec 2; $cdpReady = $true } catch {}
+if (-not $cdpReady) {
+    $chatUrl = [string]$settings.browser.chatUrl
+    if (-not $chatUrl) { $chatUrl = "https://chatgpt.com/" }
+    Write-Log "Starting configured browser with the persistent DevBridge profile."
+    Start-Process -FilePath $browserExe -ArgumentList @("--remote-debugging-port=$cdpPort", "--user-data-dir=$browserProfile", $chatUrl) | Out-Null
+}
 $script:BrowserProcess = Start-Bridge
 try {
-    Write-Log "Opening the configured browser. Sign in and open the intended ChatGPT conversation there."
-    [void](Read-Host "When the correct ChatGPT conversation is visible, press Enter here to start monitoring")
-    $snapshot = Invoke-Bridge $script:BrowserProcess "snapshot"
-    $lastSeenHash = Get-MessageHash ("$($snapshot.conversationMessageCount)|" + [string]$snapshot.assistantText)
-    Write-Log "Waiting for a NEW assistant message ending with a DevBridge command."
+    $snapshot = $null
+    $deadline = (Get-Date).AddSeconds(90)
+    while ((Get-Date) -lt $deadline) {
+        try { $snapshot = Invoke-Bridge $script:BrowserProcess "snapshot"; break } catch { Start-Sleep -Seconds 2 }
+    }
+    if (-not $snapshot) { throw "Could not connect to the browser or open ChatGPT within 90 seconds." }
+    $statePath = Join-Path $StateRoot "monitor-state.json"
+    $chatHashes = @{}
+    if (Test-Path $statePath) {
+        try {
+            $saved = Get-Content $statePath -Raw | ConvertFrom-Json
+            if ($saved.chats) { foreach ($prop in $saved.chats.PSObject.Properties) { $chatHashes[$prop.Name] = [string]$prop.Value } }
+        } catch { Write-Log "Monitor state unreadable; creating a fresh safe baseline." }
+    }
+    function Save-ChatState {
+        $state = @{ chats = $chatHashes; lastChatUrl = [string]$snapshot.url }
+        $tmp = $statePath + ".tmp"
+        Set-Content -LiteralPath $tmp -Value ($state | ConvertTo-Json -Depth 8) -Encoding UTF8
+        Move-Item -LiteralPath $tmp -Destination $statePath -Force
+    }
+    $chatId = [string]$snapshot.conversationId
+    if ($chatId) {
+        $chatHashes[$chatId] = Get-MessageHash ([string]$snapshot.assistantMessageId + "|" + [string]$snapshot.assistantText)
+        Save-ChatState
+    }
+    Write-Log "Monitoring started automatically; no Enter key is required. $($snapshot.url)"
     $cycles = 0
     $pollSeconds = [Math]::Max(2, [int]$settings.automation.pollIntervalSeconds)
     $maxCycles = [Math]::Max(1, [int]$settings.automation.maxBuildCycles)
-    $lastText = ""
-    $stableCount = 0
+    $pendingKey = ""
+    $stable = 0
     while ($true) {
         Start-Sleep -Seconds $pollSeconds
         $snapshot = Invoke-Bridge $script:BrowserProcess "snapshot"
+        $chatId = [string]$snapshot.conversationId
+        if (-not $chatId -or -not $snapshot.assistantText) { continue }
         $message = [string]$snapshot.assistantText
-        if (-not $message) { continue }
-        if ($message -eq $lastText) { $stableCount++ } else { $lastText = $message; $stableCount = 0 }
-        if ($stableCount -lt 1) { continue }
-        $hash = Get-MessageHash ("$($snapshot.conversationMessageCount)|" + $message)
-        if ($hash -eq $lastSeenHash) { continue }
-        $lastSeenHash = $hash
+        $hash = Get-MessageHash ([string]$snapshot.assistantMessageId + "|" + $message)
+        if (-not $chatHashes.ContainsKey($chatId)) {
+            $chatHashes[$chatId] = $hash
+            Save-ChatState
+            $pendingKey = ""; $stable = 0
+            Write-Log "New conversation selected; current answer baselined without executing history."
+            continue
+        }
+        if ($hash -eq $chatHashes[$chatId]) { $pendingKey = ""; $stable = 0; continue }
+        $key = $chatId + "|" + $hash
+        if ($key -eq $pendingKey) { $stable++ } else { $pendingKey = $key; $stable = 0 }
+        if ($stable -lt 2) { continue }
+        $chatHashes[$chatId] = $hash
+        Save-ChatState
         $command = Get-CommandFromMessage $message
         if ($command -eq "DONE") {
-            try {
-                Assert-LastBuildCurrent
-                Write-Log "Assistant marked task DONE after the latest remote commit passed the local build."
-                break
-            } catch {
-                $reason = $_.Exception.Message
-                Write-Log "DONE rejected: $reason"
-                $feedback = "DevBridge rejected DONE for safety: $reason Please inspect the repository state. If the remote branch contains a newer commit, issue DEVBRIDGE: BUILD so it can be pulled and tested. If the local working tree is dirty or Git cannot reach origin, explain the required manual action and use DEVBRIDGE: WAIT."
-                Invoke-Bridge $script:BrowserProcess "send" $feedback | Out-Null
+            try { Assert-LastBuildCurrent; Write-Log "Assistant marked task DONE after successful latest build."; break }
+            catch {
+                $feedback = "DevBridge rejected DONE for safety: $($_.Exception.Message) Inspect repository state and use DEVBRIDGE: BUILD or DEVBRIDGE: WAIT."
+                Invoke-Bridge $script:BrowserProcess "send" $feedback $chatId | Out-Null
                 continue
             }
         }
         if ($command -eq "ABORT") { throw "Assistant requested ABORT." }
-
-        $handoffThreshold = [int]$settings.automation.handoffAtConversationCharacters
-        if ($handoffThreshold -gt 0 -and [int]$snapshot.conversationCharacters -ge $handoffThreshold) {
-            $pendingCommand = if ($command -eq "BUILD") { "BUILD" } else { "NONE" }
-            Write-Log "Conversation reached approximately $($snapshot.conversationCharacters) characters; starting handoff (pending: $pendingCommand)."
-            $lastSeenHash = Invoke-Handoff $lastSeenHash $pendingCommand
-            $lastText = ""
-            $stableCount = 0
+        $threshold = [int]$settings.automation.handoffAtConversationCharacters
+        if ($threshold -gt 0 -and [int]$snapshot.conversationCharacters -ge $threshold) {
+            $pending = if ($command -eq "BUILD") { "BUILD" } else { "NONE" }
+            Write-Log "Conversation reached handoff threshold; transferring to a new chat."
+            [void](Invoke-Handoff $hash $pending $chatId)
+            $pendingKey = ""; $stable = 0
             continue
         }
-
         if ($command) {
-            Write-Log "Received command: $command"
+            Write-Log "Received command $command in conversation $chatId"
             switch ($command) {
-                "WAIT" { Write-Log "Assistant requested WAIT. Monitoring continues." }
+                "WAIT" { Write-Log "Assistant requested WAIT." }
                 "BUILD" {
                     $cycles++
                     if ($cycles -gt $maxCycles) { throw "Maximum build cycle count ($maxCycles) reached." }
-                    Invoke-OneBuild
+                    Invoke-OneBuild $chatId
                 }
             }
         }
