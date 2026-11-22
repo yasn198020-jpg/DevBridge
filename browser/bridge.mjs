@@ -31,7 +31,6 @@ async function ensureBrowser() {
     context = browser.contexts()[0];
     if (!context) throw new Error("CDP connected, but browser has no accessible context.");
   }
-  await choosePage();
 }
 const messages = target => target.locator('main [data-dil-response][data-dil-message-id]');
 async function getSnapshot(target) {
@@ -56,19 +55,29 @@ async function send(target, text) {
 async function handle(cmd) {
   if (cmd.op === "quit") { output({ok:true,disconnected:true}); browser=undefined;context=undefined;page=undefined;preferredPage=undefined;return; }
   await ensureBrowser();
-  if (cmd.op === "snapshot") { output(await getSnapshot(page)); return; }
+  if (cmd.op === "snapshot") {
+    let target;
+    if (cmd.conversationId) {
+      target = context.pages().find(p => !p.isClosed() && isChat(p) && p.url().includes("/c/"+cmd.conversationId));
+      if (!target) throw new Error("Requested conversation is no longer open.");
+      page=target;preferredPage=target;
+    } else if (cmd.pinPreferred && preferredPage && !preferredPage.isClosed()) target=preferredPage;
+    else target=await choosePage();
+    output(await getSnapshot(target)); return;
+  }
   if (cmd.op === "send") {
     if (typeof cmd.text !== "string" || !cmd.text.trim()) throw new Error("send requires text.");
-    let target = page;
+    let target;
     if (cmd.conversationId) {
       target = context.pages().find(p => !p.isClosed() && isChat(p) && p.url().includes("/c/"+cmd.conversationId));
       if (!target) throw new Error("Command conversation is no longer open; refusing to send to another chat.");
       page=target;preferredPage=target;
-    }
+    } else if (cmd.pinPreferred && preferredPage && !preferredPage.isClosed()) target=preferredPage;
+    else target=await choosePage();
     await send(target,cmd.text); output({ok:true,url:target.url()}); return;
   }
   if (cmd.op === "newchat") {
-    const target=page;
+    const target=await choosePage();
     await target.goto(chatUrl,{waitUntil:"domcontentloaded"});
     await target.waitForTimeout(1200);
     if (await messages(target).count()) throw new Error("ChatGPT did not open a blank conversation; refusing unsafe handoff.");
