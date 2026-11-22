@@ -26,9 +26,22 @@ async function choosePage() {
       try { const u = new URL(savedChatUrl); return u.origin === new URL(chatUrl).origin && /\/c\/[0-9a-f-]+/i.test(u.pathname); }
       catch { return false; }
     })();
-    const alreadyRestored = candidates.some(p => /\/c\/[0-9a-f-]+/i.test(new URL(p.url()).pathname));
-    if (savedIsConversation && !alreadyRestored) {
-      const target = candidates[0] || await context.newPage();
+    if (savedIsConversation) {
+      const savedPath = new URL(savedChatUrl).pathname.replace(/\\/$/, "");
+      const savedPage = candidates.find(p => {
+        try { return new URL(p.url()).pathname.replace(/\\/$/, "") === savedPath; }
+        catch { return false; }
+      });
+      if (savedPage) {
+        page = savedPage;
+        preferredPage = savedPage;
+        return savedPage;
+      }
+      // A different open conversation does not mean the saved last chat is restored.
+      // Reuse an existing ChatGPT tab (or create one) and navigate it to the saved chat.
+      const target = (preferredPage && !preferredPage.isClosed() && isChat(preferredPage))
+        ? preferredPage
+        : (candidates[0] || await context.newPage());
       await target.goto(savedChatUrl, { waitUntil: "domcontentloaded" });
       page = target; preferredPage = target;
       return target;
