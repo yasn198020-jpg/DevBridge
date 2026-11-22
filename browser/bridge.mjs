@@ -46,14 +46,16 @@ async function ensureBrowser() {
   await page.waitForLoadState("domcontentloaded").catch(() => {});
 }
 
+function assistantMessages() {
+  // Current ChatGPT transcript uses one data-dil-response root per assistant turn.
+  return page.locator('main [data-dil-response][data-dil-message-id]');
+}
+
 async function lastAssistantMessage() {
-  const messages = page.locator('[data-message-author-role="assistant"]');
+  const messages = assistantMessages();
   const count = await messages.count();
   if (!count) return "";
-  const last = messages.nth(count - 1);
-  const markdown = last.locator(".markdown");
-  if (await markdown.count()) return (await markdown.last().innerText()).trim();
-  return (await last.innerText()).trim();
+  return (await messages.nth(count - 1).innerText()).trim();
 }
 
 async function sendMessage(text) {
@@ -87,7 +89,7 @@ async function handle(command) {
   await ensureBrowser();
   switch (command.op) {
     case "snapshot": {
-      const messages = page.locator('[data-message-author-role]');
+      const messages = assistantMessages();
       const count = await messages.count();
       let conversationCharacters = 0;
       for (let i = 0; i < count; i++) {
@@ -112,7 +114,7 @@ async function handle(command) {
     case "newchat": {
       await page.goto(chatUrl, { waitUntil: "domcontentloaded" });
       await page.waitForTimeout(1200);
-      const remainingMessages = await page.locator('[data-message-author-role]').count();
+      const remainingMessages = await assistantMessages().count();
       if (remainingMessages > 0) {
         throw new Error("ChatGPT did not open a blank conversation; refusing to send handoff into the previous chat.");
       }
