@@ -62,11 +62,12 @@ function Start-Bridge {
     if (-not $p.Start()) { throw "Could not start browser bridge." }
     return $p
 }
-function Invoke-Bridge($Process, $Operation, $Text = $null, $ConversationId = $null) {
+function Invoke-Bridge($Process, $Operation, $Text = $null, $ConversationId = $null, [bool]$PinPreferred = $false) {
     if ($Process.HasExited) { throw "Browser bridge process has exited (code $($Process.ExitCode))." }
     $request = @{ op = $Operation }
     if ($null -ne $Text) { $request.text = $Text }
     if ($null -ne $ConversationId) { $request.conversationId = $ConversationId }
+    if ($PinPreferred) { $request.pinPreferred = $true }
     $Process.StandardInput.WriteLine(($request | ConvertTo-Json -Compress))
     $Process.StandardInput.Flush()
     $task = $Process.StandardOutput.ReadLineAsync()
@@ -161,7 +162,7 @@ Be concise but preserve technical details. Do not claim anything was tested unle
     Write-Log "Waiting for ChatGPT handoff summary (timeout ${timeoutSeconds}s)."
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Seconds $poll
-        $snap = Invoke-Bridge $script:BrowserProcess "snapshot"
+        $snap = Invoke-Bridge $script:BrowserProcess "snapshot" $null $ConversationId
         $candidate = [string]$snap.assistantText
         if (-not $candidate) { continue }
         $candidateHash = Get-MessageHash ("$($snap.conversationMessageCount)|" + $candidate)
@@ -179,7 +180,7 @@ Be concise but preserve technical details. Do not claim anything was tested unle
     $handoffPath = Join-Path $StateRoot "handoff.md"
     Set-Content -LiteralPath $handoffPath -Value $summary -Encoding UTF8
     Write-Log "Saved handoff summary to $handoffPath"
-    Invoke-Bridge $script:BrowserProcess "newchat" | Out-Null
+    Invoke-Bridge $script:BrowserProcess "newchat" $null $ConversationId | Out-Null
     $continuation = @"
 We are continuing an existing development task. Read this handoff carefully and continue from the stated next action. Do not repeat completed work. Keep using the same repository and exact branch. Follow the DevBridge command protocol: when a local build is needed and the complete commit batch is ready, finish your response with DEVBRIDGE: BUILD READY; when the task and build are complete, use DEVBRIDGE: DONE.
 
@@ -187,11 +188,11 @@ Pending DevBridge action: $PendingCommand. If it is BUILD, do not repeat source 
 
 $summary
 "@
-    Invoke-Bridge $script:BrowserProcess "send" $continuation | Out-Null
+    Invoke-Bridge $script:BrowserProcess "send" $continuation $null $true | Out-Null
     $newChatSnapshot = $null
     for ($attempt = 0; $attempt -lt 10; $attempt++) {
         Start-Sleep -Seconds 1
-        $newChatSnapshot = Invoke-Bridge $script:BrowserProcess "snapshot"
+        $newChatSnapshot = Invoke-Bridge $script:BrowserProcess "snapshot" $null $null $true
         if ($newChatSnapshot.conversationId) { break }
     }
     Write-Log "Opened a new chat and transferred the handoff summary."
