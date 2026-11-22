@@ -18,8 +18,19 @@ function Write-Log([string]$Message) {
     Add-Content -LiteralPath (Join-Path $LogRoot "devbridge.log") -Value $line -Encoding UTF8
 }
 function Invoke-Git([string]$WorkingDirectory, [string[]]$GitArguments) {
-    $output = & git -C $WorkingDirectory @GitArguments 2>&1
-    $code = $LASTEXITCODE
+    # Windows PowerShell 5.1 can treat native stderr output as a terminating
+    # error when the global ErrorActionPreference is Stop. Git commonly writes
+    # progress to stderr even when the command succeeds, so capture its output
+    # and rely on LASTEXITCODE for the actual result.
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $output = & git -C $WorkingDirectory @GitArguments 2>&1
+        $code = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+
     if ($code -ne 0) {
         throw ("git {0} failed (exit {1}): {2}" -f ($GitArguments -join " "), $code, ($output -join [Environment]::NewLine))
     }
