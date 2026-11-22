@@ -128,9 +128,10 @@ async function handle(command) {
 
 const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 for await (const line of rl) {
-  if (!line.trim()) continue;
+  const cleanLine = line.replace(/^\uFEFF/, "");
+  if (!cleanLine.trim()) continue;
   try {
-    await handle(JSON.parse(line));
+    await handle(JSON.parse(cleanLine));
   } catch (error) {
     output({ ok: false, error: String(error?.message || error) });
   }
