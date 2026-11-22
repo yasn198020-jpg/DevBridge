@@ -77,7 +77,11 @@ async function handle(cmd) {
     await send(target,cmd.text); output({ok:true,url:target.url()}); return;
   }
   if (cmd.op === "newchat") {
-    const target=await choosePage();
+    let target;
+    if (cmd.conversationId) {
+      target = context.pages().find(p => !p.isClosed() && isChat(p) && p.url().includes("/c/"+cmd.conversationId));
+      if (!target) throw new Error("Handoff conversation is no longer open.");
+    } else target=await choosePage();
     await target.goto(chatUrl,{waitUntil:"domcontentloaded"});
     await target.waitForTimeout(1200);
     if (await messages(target).count()) throw new Error("ChatGPT did not open a blank conversation; refusing unsafe handoff.");
