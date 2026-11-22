@@ -279,6 +279,31 @@ function Invoke-OneBuild([string]$ConversationId) {
     }
     $buildCommand = [string]$selected.buildCommand
     $buildArgs = Resolve-BuildArguments $versionInfo
+
+    # Keep Android 5.1.1 builds on the exact script used by the VS Code task.
+    # DevBridge resolves the next VersionCode from the configured update manifest
+    # and passes it explicitly, so the script never waits for interactive input.
+    $android511Script = Join-Path $repo "scripts/build-publish-android511.ps1"
+    if ($expectedBranch -eq "compat/android-5.1.1-api22-vosk" -and (Test-Path -LiteralPath $android511Script)) {
+        if ($null -eq $versionInfo) {
+            throw "Android 5.1.1 requires versionSource so DevBridge can supply -VersionCode to the VS Code build script. Build was not started."
+        }
+        if ($versionInfo.Next -lt 5111) {
+            throw "Android 5.1.1 VersionCode $($versionInfo.Next) is below the script minimum 5111. Build was not started."
+        }
+        $buildCommand = "powershell.exe"
+        $buildArgs = @(
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            $android511Script,
+            "-VersionCode",
+            [string]$versionInfo.Next
+        )
+        Write-Log "Using the VS Code Android 5.1.1 build-and-publish script with VersionCode $($versionInfo.Next)."
+    }
+
     $working = if ($selected.workingDirectory -and $selected.workingDirectory -ne ".") {
         Join-Path $repo ([string]$selected.workingDirectory)
     } else { $repo }
