@@ -288,7 +288,20 @@ function Invoke-OneBuild([string]$ConversationId) {
     Push-Location $working
     $previousErrorActionPreference = $ErrorActionPreference
     $previousNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+    $previousGradleOpts = $env:GRADLE_OPTS
+    $previousJavaToolOptions = $env:JAVA_TOOL_OPTIONS
     try {
+        # AmneziaVPN can break Java's implicit IPv4 source-address selection
+        # for Gradle's localhost daemon connection. Force IPv4 in both the
+        # Gradle client and any forked JVM (including the daemon).
+        $ipv4Option = "-Djava.net.preferIPv4Stack=true"
+        if ($env:GRADLE_OPTS -notmatch [regex]::Escape($ipv4Option)) {
+            $env:GRADLE_OPTS = (($env:GRADLE_OPTS + " " + $ipv4Option).Trim())
+        }
+        if ($env:JAVA_TOOL_OPTIONS -notmatch [regex]::Escape($ipv4Option)) {
+            $env:JAVA_TOOL_OPTIONS = (($env:JAVA_TOOL_OPTIONS + " " + $ipv4Option).Trim())
+        }
+
         # Native build tools commonly write informational output to stderr.
         # Do not let PowerShell's Stop preference abort the pipeline: the
         # actual native process exit code is the authoritative build result.
@@ -303,6 +316,8 @@ function Invoke-OneBuild([string]$ConversationId) {
     } finally {
         $ErrorActionPreference = $previousErrorActionPreference
         $PSNativeCommandUseErrorActionPreference = $previousNativeErrorPreference
+        $env:GRADLE_OPTS = $previousGradleOpts
+        $env:JAVA_TOOL_OPTIONS = $previousJavaToolOptions
         Pop-Location
     }
     $logText = if (Test-Path $buildLog) { Get-Content $buildLog -Raw } else { "(No build output was captured.)" }
