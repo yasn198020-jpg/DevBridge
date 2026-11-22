@@ -46,7 +46,7 @@ DEVBRIDGE: DONE
 DEVBRIDGE: ABORT
 ```
 
-- `BUILD`: fetch the configured remote branch, fast-forward only, run the configured build, and send the build report into the same chat.
+- `BUILD READY` (or legacy `BUILD`): marks the end of ChatGPT's current commit batch. DevBridge fetches the configured remote branch once, fast-forwards to its latest commit, runs one build for that final state, and sends the build report into the same chat. Several commits made before this signal are therefore tested together, not one by one.
 - `WAIT`: do not build; continue monitoring for a later assistant command.
 - `DONE`: stop only if the latest remote branch commit is exactly the commit that passed the local build.
 - `ABORT`: stop immediately.
