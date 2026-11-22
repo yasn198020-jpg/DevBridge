@@ -8,12 +8,32 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const settings = JSON.parse(readFileSync(path.join(root, "config/settings.json"), "utf8"));
 const cdpUrl = process.env.DEVBRIDGE_CDP_URL || settings.browser?.cdpUrl || "http://127.0.0.1:9222";
 const chatUrl = process.env.DEVBRIDGE_CHAT_URL || settings.browser?.chatUrl || "https://chatgpt.com/";
+let savedChatUrl = null;
+try {
+  const state = JSON.parse(readFileSync(path.join(root, "state/monitor-state.json"), "utf8"));
+  if (typeof state.lastChatUrl === "string") savedChatUrl = state.lastChatUrl;
+} catch {}
+let restoreAttempted = false;
 let browser, context, page, preferredPage;
 const output = value => process.stdout.write(JSON.stringify(value) + "\n");
 const isChat = p => { try { return new URL(p.url()).origin === new URL(chatUrl).origin; } catch { return false; } };
 
 async function choosePage() {
   const candidates = context.pages().filter(p => !p.isClosed() && isChat(p));
+  if (!restoreAttempted) {
+    restoreAttempted = true;
+    const savedIsConversation = savedChatUrl && (() => {
+      try { const u = new URL(savedChatUrl); return u.origin === new URL(chatUrl).origin && /\/c\/[0-9a-f-]+/i.test(u.pathname); }
+      catch { return false; }
+    })();
+    const alreadyRestored = candidates.some(p => /\/c\/[0-9a-f-]+/i.test(new URL(p.url()).pathname));
+    if (savedIsConversation && !alreadyRestored) {
+      const target = candidates[0] || await context.newPage();
+      await target.goto(savedChatUrl, { waitUntil: "domcontentloaded" });
+      page = target; preferredPage = target;
+      return target;
+    }
+  }
   for (const p of candidates) {
     const focused = await p.evaluate(() => document.visibilityState === "visible" && document.hasFocus()).catch(() => false);
     if (focused) { page = p; preferredPage = p; return p; }
