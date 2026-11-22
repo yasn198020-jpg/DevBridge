@@ -426,6 +426,7 @@ try {
             Write-Log "Conversation reached handoff threshold; transferring to a new chat."
             $legacyHash = Get-MessageHash ("$($snapshot.conversationMessageCount)|" + $message)
             $handoffSnapshot = Invoke-Handoff $legacyHash $pending $chatId
+            $snapshot = $handoffSnapshot
             $handoffChatId = [string]$handoffSnapshot.conversationId
             if ($handoffChatId) {
                 $chatHashes[$handoffChatId] = Get-MessageHash ("|")
