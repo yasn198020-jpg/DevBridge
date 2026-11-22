@@ -191,7 +191,7 @@ $summary
     Start-Sleep -Seconds 2
     $newChatSnapshot = Invoke-Bridge $script:BrowserProcess "snapshot"
     Write-Log "Opened a new chat and transferred the handoff summary."
-    return (Get-MessageHash ("$($newChatSnapshot.conversationMessageCount)|" + [string]$newChatSnapshot.assistantText))
+    return $newChatSnapshot
 }
 function Get-NextBuildVersion {
     if (-not $selected.versionSource) { return $null }
@@ -419,7 +419,12 @@ try {
         if ($threshold -gt 0 -and [int]$snapshot.conversationCharacters -ge $threshold) {
             $pending = if ($command -eq "BUILD") { "BUILD" } else { "NONE" }
             Write-Log "Conversation reached handoff threshold; transferring to a new chat."
-            [void](Invoke-Handoff $hash $pending $chatId)
+            $handoffSnapshot = Invoke-Handoff $hash $pending $chatId
+            $handoffChatId = [string]$handoffSnapshot.conversationId
+            if ($handoffChatId) {
+                $chatHashes[$handoffChatId] = Get-MessageHash ([string]$handoffSnapshot.assistantMessageId + "|" + [string]$handoffSnapshot.assistantText)
+                Save-ChatState
+            }
             $pendingKey = ""; $stable = 0
             continue
         }
