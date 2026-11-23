@@ -19,6 +19,11 @@ DevBridge connects a ChatGPT browser session to local Git checkouts and build sc
 
 The dedicated browser profile is separate from your everyday browser profile, so it does not interfere with an already-running normal Yandex session.
 
+## Desktop dashboard
+- Run `.\Install-Desktop-Dashboard.ps1` once to create `DevBridge — мониторинг` on the Windows desktop.
+- Open the shortcut to show the live status and recent log. Use **Запустить отслеживание** to start the configured Android 5.1.1 monitor and **Остановить** to request a safe stop.
+- Closing the dashboard leaves monitoring running; use the Stop button to stop it.
+
 ## Monitoring
 - Starts without pressing Enter.
 - Polls `origin/<configured-branch>` every 20 seconds by default (configurable with `automation.gitPollIntervalSeconds`). A newly pushed commit is fetched automatically; no ChatGPT command is required.
