@@ -122,8 +122,8 @@ BUILD OUTPUT:
 $LogText
 --------------------
 
-Inspect the result. If code changes are needed, commit them to this same repository and branch, then end your reply with the standalone line DEVBRIDGE: BUILD READY. The older DEVBRIDGE: BUILD command is also accepted.
-When the task is complete, no completion command is required; DevBridge remains available for the next build.
+Inspect the result. New commits pushed to this configured branch are detected and built automatically; no special command is needed after committing.
+DEVBRIDGE: BUILD READY remains available for an immediate manual rebuild of the current branch. DEVBRIDGE: WAIT pauses command-driven actions, but automatic Git monitoring remains active.
 If you need to pause, end with DEVBRIDGE: WAIT.
 "@
     Invoke-Bridge $script:BrowserProcess "send" $report $ConversationId | Out-Null
@@ -250,6 +250,22 @@ function Resolve-BuildArguments($VersionInfo) {
         $arguments[$i] = $arguments[$i].Replace($VersionInfo.Placeholder, [string]$VersionInfo.Next)
     }
     return ,$arguments
+}
+function Test-RemoteCommitAvailable {
+    # Poll the configured remote branch independently of ChatGPT commands.
+    # Never switch branches, reset, rebase, or build from a dirty worktree.
+    Assert-RepositorySafe
+    Invoke-Git $repo @("fetch", "origin", $expectedBranch) | Out-Null
+    $localSha = (Invoke-Git $repo @("rev-parse", "HEAD") | Select-Object -First 1).Trim()
+    $remoteSha = (Invoke-Git $repo @("rev-parse", "origin/$expectedBranch") | Select-Object -First 1).Trim()
+    if ($localSha -eq $remoteSha) { return $false }
+
+    & git -C $repo merge-base --is-ancestor HEAD "origin/$expectedBranch" 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Remote branch changed, but local history is not a strict ancestor. Refusing automatic build."
+    }
+    Write-Log "New remote commit detected: $localSha -> $remoteSha"
+    return $true
 }
 function Invoke-OneBuild([string]$ConversationId) {
     Assert-RepositorySafe
@@ -436,10 +452,34 @@ try {
     $maxCycles = [Math]::Max(1, [int]$settings.automation.maxBuildCycles)
     $pendingKey = ""
     $stable = 0
+    $lastGitPoll = [DateTime]::MinValue
+    $gitPollSeconds = 20
+    if ($null -ne $settings.automation.gitPollIntervalSeconds) {
+        $gitPollSeconds = [Math]::Max(5, [int]$settings.automation.gitPollIntervalSeconds)
+    }
+    $lastActiveChatId = [string]$snapshot.conversationId
+    Write-Log "Automatic Git monitoring enabled for origin/$expectedBranch (every ${gitPollSeconds}s)."
     while ($true) {
         Start-Sleep -Seconds $pollSeconds
         $snapshot = Invoke-Bridge $script:BrowserProcess "snapshot"
         $chatId = [string]$snapshot.conversationId
+        if ($chatId) { $lastActiveChatId = $chatId }
+
+        # A pushed commit starts the configured build automatically, even if
+        # ChatGPT has not sent a BUILD command. The build itself performs a
+        # fast-forward-only pull and publishes through the project's script.
+        if (((Get-Date) - $lastGitPoll).TotalSeconds -ge $gitPollSeconds) {
+            $lastGitPoll = Get-Date
+            try {
+                if (Test-RemoteCommitAvailable) {
+                    Write-Log "Starting automatic build for a newly pushed commit."
+                    Invoke-OneBuild $lastActiveChatId
+                }
+            } catch {
+                Write-Log "Automatic Git check/build paused safely: $($_.Exception.Message)"
+            }
+        }
+
         if (-not $chatId -or -not $snapshot.assistantText) { continue }
         $message = [string]$snapshot.assistantText
         $hash = Get-MessageHash ([string]$snapshot.assistantMessageId + "|" + $message)
