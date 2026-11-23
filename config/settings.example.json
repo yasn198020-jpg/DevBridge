@@ -8,6 +8,7 @@
   },
   "automation": {
     "pollIntervalSeconds": 5,
+    "gitPollIntervalSeconds": 20,
     "maxBuildCycles": 12,
     "handoffAtConversationCharacters": 80000,
     "handoffWaitSeconds": 300
