@@ -24,6 +24,22 @@ $LogPath = Join-Path $Root "logs/devbridge.log"
 $BuildLogPath = Join-Path $Root "logs/last-build.log"
 $StopPath = Join-Path $Root "state/stop-monitoring.request"
 $script:BridgeProcess = $null
+$ProjectsConfigPath = Join-Path $Root "config/projects.json"
+if (-not (Test-Path -LiteralPath $ProjectsConfigPath)) {
+    throw "Missing config/projects.json. Configure at least one repository and branch first."
+}
+$projectsDocument = Get-Content -LiteralPath $ProjectsConfigPath -Raw | ConvertFrom-Json
+$script:ProjectConfigs = @($projectsDocument.projects | Where-Object {
+    $_.repository -and $_.branch -and $_.name
+})
+if ($script:ProjectConfigs.Count -eq 0) {
+    throw "config/projects.json contains no usable repository/branch entries."
+}
+$script:SelectedProject = $script:ProjectConfigs | Where-Object { $_.name -eq $Project } | Select-Object -First 1
+if (-not $script:SelectedProject) {
+    $script:SelectedProject = $script:ProjectConfigs | Where-Object { $_.enabled } | Select-Object -First 1
+}
+if (-not $script:SelectedProject) { $script:SelectedProject = $script:ProjectConfigs[0] }
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "DevBridge - Android 5.1.1 monitor"
@@ -56,7 +72,8 @@ $status.ForeColor = [System.Drawing.Color]::FromArgb(90,98,110)
 $statusPanel.Controls.Add($status)
 
 $detail = New-Object System.Windows.Forms.Label
-$detail.Text = "Monitoring branch compat/android-5.1.1-api22-vosk"
+$detail.Text = ("{0} | {1}" -f $script:SelectedProject.repository, $script:SelectedProject.branch)
+$detail.AutoEllipsis = $true
 $detail.Location = New-Object System.Drawing.Point(20,49)
 $detail.Size = New-Object System.Drawing.Size(780,24)
 $detail.ForeColor = [System.Drawing.Color]::DimGray
@@ -84,6 +101,17 @@ $stop.FlatAppearance.BorderSize = 0
 $stop.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
 $stop.Enabled = $false
 $form.Controls.Add($stop)
+
+$choose = New-Object System.Windows.Forms.Button
+$choose.Text = "Choose repository / branch"
+$choose.Location = New-Object System.Drawing.Point(452,174)
+$choose.Size = New-Object System.Drawing.Size(250,42)
+$choose.BackColor = [System.Drawing.Color]::FromArgb(65,105,160)
+$choose.ForeColor = [System.Drawing.Color]::White
+$choose.FlatStyle = "Flat"
+$choose.FlatAppearance.BorderSize = 0
+$choose.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 10)
+$form.Controls.Add($choose)
 
 $logTitle = New-Object System.Windows.Forms.Label
 $logTitle.Text = "Event log"
@@ -127,6 +155,97 @@ function Set-Running([bool]$running, [string]$message = "") {
     }
 }
 
+function Show-ProjectSelector {
+    $dialog = New-Object System.Windows.Forms.Form
+    $dialog.Text = "Select repository and branch"
+    $dialog.Size = New-Object System.Drawing.Size(700,260)
+    $dialog.StartPosition = "CenterParent"
+    $dialog.FormBorderStyle = "FixedDialog"
+    $dialog.MaximizeBox = $false
+    $dialog.MinimizeBox = $false
+    $dialog.ShowInTaskbar = $false
+    $dialog.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+
+    $repoLabel = New-Object System.Windows.Forms.Label
+    $repoLabel.Text = "Local repository"
+    $repoLabel.Location = New-Object System.Drawing.Point(22,22)
+    $repoLabel.Size = New-Object System.Drawing.Size(620,22)
+    $dialog.Controls.Add($repoLabel)
+
+    $repoCombo = New-Object System.Windows.Forms.ComboBox
+    $repoCombo.Location = New-Object System.Drawing.Point(22,48)
+    $repoCombo.Size = New-Object System.Drawing.Size(640,28)
+    $repoCombo.DropDownStyle = "DropDownList"
+    $dialog.Controls.Add($repoCombo)
+
+    $branchLabel = New-Object System.Windows.Forms.Label
+    $branchLabel.Text = "Branch"
+    $branchLabel.Location = New-Object System.Drawing.Point(22,88)
+    $branchLabel.Size = New-Object System.Drawing.Size(620,22)
+    $dialog.Controls.Add($branchLabel)
+
+    $branchCombo = New-Object System.Windows.Forms.ComboBox
+    $branchCombo.Location = New-Object System.Drawing.Point(22,114)
+    $branchCombo.Size = New-Object System.Drawing.Size(640,28)
+    $branchCombo.DropDownStyle = "DropDownList"
+    $dialog.Controls.Add($branchCombo)
+
+    $repoPaths = @($script:ProjectConfigs | Select-Object -ExpandProperty repository -Unique)
+    foreach ($repoPath in $repoPaths) { [void]$repoCombo.Items.Add([string]$repoPath) }
+    $repoCombo.SelectedItem = [string]$script:SelectedProject.repository
+    if ($repoCombo.SelectedIndex -lt 0 -and $repoCombo.Items.Count -gt 0) { $repoCombo.SelectedIndex = 0 }
+
+    $refreshBranches = {
+        $branchCombo.Items.Clear()
+        $repoValue = [string]$repoCombo.SelectedItem
+        $branchNames = @($script:ProjectConfigs | Where-Object { $_.repository -eq $repoValue } | Select-Object -ExpandProperty branch -Unique)
+        foreach ($branchName in $branchNames) { [void]$branchCombo.Items.Add([string]$branchName) }
+        if ($repoValue -eq [string]$script:SelectedProject.repository) {
+            $branchCombo.SelectedItem = [string]$script:SelectedProject.branch
+        }
+        if ($branchCombo.SelectedIndex -lt 0 -and $branchCombo.Items.Count -gt 0) { $branchCombo.SelectedIndex = 0 }
+    }
+    $repoCombo.Add_SelectedIndexChanged($refreshBranches)
+    & $refreshBranches
+
+    $ok = New-Object System.Windows.Forms.Button
+    $ok.Text = "Select"
+    $ok.Location = New-Object System.Drawing.Point(442,166)
+    $ok.Size = New-Object System.Drawing.Size(105,34)
+    $ok.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $dialog.Controls.Add($ok)
+
+    $cancel = New-Object System.Windows.Forms.Button
+    $cancel.Text = "Cancel"
+    $cancel.Location = New-Object System.Drawing.Point(557,166)
+    $cancel.Size = New-Object System.Drawing.Size(105,34)
+    $cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $dialog.Controls.Add($cancel)
+    $dialog.AcceptButton = $ok
+    $dialog.CancelButton = $cancel
+
+    if ($dialog.ShowDialog($form) -eq [System.Windows.Forms.DialogResult]::OK) {
+        $repoValue = [string]$repoCombo.SelectedItem
+        $branchValue = [string]$branchCombo.SelectedItem
+        $match = $script:ProjectConfigs | Where-Object {
+            $_.repository -eq $repoValue -and $_.branch -eq $branchValue
+        } | Select-Object -First 1
+        if ($match) {
+            $script:SelectedProject = $match
+            $detail.Text = ("{0} | {1}" -f $script:SelectedProject.repository, $script:SelectedProject.branch)
+        }
+    }
+    $dialog.Dispose()
+}
+
+$choose.Add_Click({
+    if (Test-BridgeRunning) {
+        [System.Windows.Forms.MessageBox]::Show("Stop monitoring before changing the selected repository or branch.", "DevBridge") | Out-Null
+        return
+    }
+    Show-ProjectSelector
+})
+
 function Test-BridgeRunning {
     return ($null -ne $script:BridgeProcess -and -not $script:BridgeProcess.HasExited)
 }
@@ -143,7 +262,8 @@ $start.Add_Click({
     if (Test-Path -LiteralPath $StopPath) { Remove-Item -LiteralPath $StopPath -Force }
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = (Get-Command powershell.exe).Source
-    $psi.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $BridgeScript + '" -Project "' + $Project.Replace('"','') + '"'
+    $selectedName = ([string]$script:SelectedProject.name).Replace('"','')
+    $psi.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $BridgeScript + '" -Project "' + $selectedName + '"'
     $psi.WorkingDirectory = $Root
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
@@ -176,7 +296,7 @@ $timer.Add_Tick({
     if (Test-BridgeRunning) {
         $start.Enabled = $false
         if (-not (Test-Path -LiteralPath $StopPath) -and $status.Text -notlike "*running*") {
-            Set-Running $true "Monitoring origin/compat/android-5.1.1-api22-vosk."
+            Set-Running $true ("Monitoring {0} | {1}" -f $script:SelectedProject.repository, $script:SelectedProject.branch)
         }
     } elseif ($script:BridgeProcess -and $script:BridgeProcess.HasExited) {
         $exit = $script:BridgeProcess.ExitCode
