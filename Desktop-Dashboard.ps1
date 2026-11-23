@@ -432,10 +432,10 @@ $timer.Add_Tick({
         $eventLines = @()
         $buildLines = @()
         if (Test-Path -LiteralPath $LogPath) {
-            $eventLines = @(Get-Content -LiteralPath $LogPath -Tail 60 -ErrorAction Stop)
+            $eventLines = @(Get-Content -LiteralPath $LogPath -Tail 60 -Encoding UTF8 -ErrorAction Stop)
         }
         if (Test-Path -LiteralPath $BuildLogPath) {
-            $buildLines = @(Get-Content -LiteralPath $BuildLogPath -Tail 100 -ErrorAction Stop)
+            $buildLines = @(Get-Content -LiteralPath $BuildLogPath -Tail 100 -Encoding UTF8 -ErrorAction Stop)
         }
 
         # Show output in chronological order: oldest at the top, newest at the bottom.
@@ -465,7 +465,7 @@ $timer.Add_Tick({
         }
 
         if ($eventLines.Count -gt 0) {
-            $latest = [string]$eventLines[0]
+            $latest = [string]$eventLines[$eventLines.Count - 1]
             if ($latest -match 'Build finished with exit code 0') {
                 $detail.Text = "Build completed successfully."
             } elseif ($latest -match 'Build finished with exit code') {
@@ -480,10 +480,12 @@ $timer.Add_Tick({
                 $detail.Text = "Monitoring stopped."
             }
         }
-        if ($buildLines.Count -gt 0 -and $eventLines.Count -gt 0 -and ([string]$eventLines[0] -match 'Building commit')) {
+        if ($buildLines.Count -gt 0 -and $eventLines.Count -gt 0 -and ([string]$eventLines[$eventLines.Count - 1] -match 'Building commit')) {
             $detail.Text = "Build is running - live Gradle output is shown below."
         }
-    } catch {}
+    } catch {
+        $detail.Text = "Log refresh warning: " + $_.Exception.Message
+    }
 })
 $timer.Start()
 
