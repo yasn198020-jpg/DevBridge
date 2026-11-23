@@ -36,6 +36,11 @@ foreach ($relative in @("config/settings.json", "config/settings.example.json", 
 $mainScript = Get-Content (Join-Path $Root "DevBridge.ps1") -Raw
 if ($mainScript -match "Read-Host") { $failed = $true; Write-Host "FAIL Manual Enter prompt is still present." -ForegroundColor Red }
 else { Write-Host "PASS No manual Enter prompt." -ForegroundColor Green }
+if ($mainScript -notmatch "function Test-RemoteCommitAvailable" -or $mainScript -notmatch "gitPollIntervalSeconds" -or $mainScript -notmatch "Starting automatic build for a newly pushed commit") {
+    $failed = $true
+    Write-Host "FAIL Automatic Git commit monitoring is missing." -ForegroundColor Red
+} else { Write-Host "PASS New remote commits trigger automatic builds." -ForegroundColor Green }
+
 if ($mainScript -notmatch "monitor-state\.json") { $failed = $true; Write-Host "FAIL Persistent conversation state is missing." -ForegroundColor Red }
 else { Write-Host "PASS Persistent conversation state is configured." -ForegroundColor Green }
 if ($mainScript -notmatch "build-publish-android511\.ps1" -or $mainScript -notmatch '"-VersionCode"' -or $mainScript -notmatch "versionInfo\.Next") {
