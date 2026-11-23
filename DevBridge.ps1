@@ -69,12 +69,13 @@ function Start-Bridge {
     if (-not $p.Start()) { throw "Could not start browser bridge." }
     return $p
 }
-function Invoke-Bridge($Process, $Operation, $Text = $null, $ConversationId = $null, [bool]$PinPreferred = $false) {
+function Invoke-Bridge($Process, $Operation, $Text = $null, $ConversationId = $null, [bool]$PinPreferred = $false, [bool]$LatestChat = $false) {
     if ($Process.HasExited) { throw "Browser bridge process has exited (code $($Process.ExitCode))." }
     $request = @{ op = $Operation }
     if ($null -ne $Text) { $request.text = $Text }
     if ($null -ne $ConversationId) { $request.conversationId = $ConversationId }
     if ($PinPreferred) { $request.pinPreferred = $true }
+    if ($LatestChat) { $request.latestChat = $true }
     $Process.StandardInput.WriteLine(($request | ConvertTo-Json -Compress))
     $Process.StandardInput.Flush()
     $task = $Process.StandardOutput.ReadLineAsync()
@@ -126,7 +127,10 @@ Inspect the result. New commits pushed to this configured branch are detected an
 DEVBRIDGE: BUILD READY remains available for an immediate manual rebuild of the current branch. DEVBRIDGE: WAIT pauses command-driven actions, but automatic Git monitoring remains active.
 If you need to pause, end with DEVBRIDGE: WAIT.
 "@
-    Invoke-Bridge $script:BrowserProcess "send" $report $ConversationId | Out-Null
+    # Build reports always go to the newest conversation after refreshing ChatGPT,
+    # not necessarily to the chat that originally triggered the build.
+    $sent = Invoke-Bridge $script:BrowserProcess "send" $report $null $false $true
+    Write-Log "Build report sent to latest ChatGPT conversation: $($sent.url)"
 }
 function Invoke-Handoff([string]$PreviousAssistantHash, [string]$PendingCommand = "NONE", [string]$ConversationId = "") {
     $handoffPrompt = @"
