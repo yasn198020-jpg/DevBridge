@@ -166,6 +166,16 @@ $logTitle.Location = New-Object System.Drawing.Point(22,235)
 $logTitle.Size = New-Object System.Drawing.Size(300,25)
 $form.Controls.Add($logTitle)
 
+$clearLog = New-Object System.Windows.Forms.Button
+$clearLog.Text = "Clear log"
+$clearLog.Location = New-Object System.Drawing.Point(752,231)
+$clearLog.Size = New-Object System.Drawing.Size(110,30)
+$clearLog.Anchor = "Top,Right"
+$clearLog.FlatStyle = "Flat"
+$clearLog.BackColor = [System.Drawing.Color]::FromArgb(225,229,235)
+$clearLog.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$form.Controls.Add($clearLog)
+
 $logBox = New-Object System.Windows.Forms.RichTextBox
 $logBox.Location = New-Object System.Drawing.Point(22,265)
 $logBox.Size = New-Object System.Drawing.Size(840,285)
@@ -176,6 +186,23 @@ $logBox.ForeColor = [System.Drawing.Color]::FromArgb(225,231,239)
 $logBox.Font = New-Object System.Drawing.Font("Consolas", 9)
 $logBox.BorderStyle = "FixedSingle"
 $form.Controls.Add($logBox)
+
+$clearLog.Add_Click({
+    try {
+        # Clear both source logs so the next refresh does not restore old lines.
+        foreach ($path in @($LogPath, $BuildLogPath)) {
+            if (Test-Path -LiteralPath $path) {
+                [IO.File]::WriteAllText($path, [string]::Empty, [Text.Encoding]::UTF8)
+            }
+        }
+        $logBox.Clear()
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show(
+            ("Could not clear the log files. Stop monitoring/build output and try again. " + $_.Exception.Message),
+            "Clear log"
+        ) | Out-Null
+    }
+})
 
 $footer = New-Object System.Windows.Forms.Label
 $footer.Text = "Closing this window does not stop the background monitor."
@@ -411,18 +438,16 @@ $timer.Add_Tick({
             $buildLines = @(Get-Content -LiteralPath $BuildLogPath -Tail 100 -ErrorAction Stop)
         }
 
-        # Newest output is always shown first. The build log is streamed by
-        # Tee-Object while Gradle runs, so this view updates during the build.
-        [array]::Reverse($eventLines)
-        [array]::Reverse($buildLines)
+        # Show output in chronological order: oldest at the top, newest at the bottom.
+        # The build log is streamed by Tee-Object while Gradle runs.
         $display = New-Object System.Collections.Generic.List[string]
         if ($buildLines.Count -gt 0) {
-            $display.Add("=== LIVE BUILD OUTPUT (newest first) ===")
+            $display.Add("=== LIVE BUILD OUTPUT ===")
             foreach ($line in $buildLines) { $display.Add([string]$line) }
             $display.Add("")
         }
         if ($eventLines.Count -gt 0) {
-            $display.Add("=== EVENTS (newest first) ===")
+            $display.Add("=== EVENTS ===")
             foreach ($line in $eventLines) { $display.Add([string]$line) }
         }
         $newText = $display -join [Environment]::NewLine
@@ -431,9 +456,8 @@ $timer.Add_Tick({
             [void][DevBridgeNativeMethods]::SendMessage($logBox.Handle, 0x000B, [IntPtr]::Zero, [IntPtr]::Zero)
             try {
                 $logBox.Text = $newText
-                $logBox.SelectionStart = 0
+                $logBox.SelectionStart = $logBox.TextLength
                 $logBox.ScrollToCaret()
-                $logBox.SelectionStart = 0
             } finally {
                 [void][DevBridgeNativeMethods]::SendMessage($logBox.Handle, 0x000B, [IntPtr]::new(1), [IntPtr]::Zero)
                 $logBox.Invalidate()
