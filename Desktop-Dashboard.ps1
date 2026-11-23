@@ -6,6 +6,18 @@ $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
+# Suppress RichTextBox repaint while replacing its contents to prevent flicker.
+if (-not ("DevBridgeNativeMethods" -as [type])) {
+    Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class DevBridgeNativeMethods {
+    [DllImport("user32.dll")]
+    public static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+}
+"@
+}
+
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $BridgeScript = Join-Path $Root "DevBridge.ps1"
 $LogPath = Join-Path $Root "logs/devbridge.log"
@@ -197,10 +209,17 @@ $timer.Add_Tick({
         }
         $newText = $display -join [Environment]::NewLine
         if ($logBox.Text -ne $newText) {
-            $logBox.Text = $newText
-            $logBox.SelectionStart = 0
-            $logBox.ScrollToCaret()
-            $logBox.SelectionStart = 0
+            # Prevent the control from painting intermediate blank/partial frames.
+            [void][DevBridgeNativeMethods]::SendMessage($logBox.Handle, 0x000B, [IntPtr]::Zero, [IntPtr]::Zero)
+            try {
+                $logBox.Text = $newText
+                $logBox.SelectionStart = 0
+                $logBox.ScrollToCaret()
+                $logBox.SelectionStart = 0
+            } finally {
+                [void][DevBridgeNativeMethods]::SendMessage($logBox.Handle, 0x000B, [IntPtr]::new(1), [IntPtr]::Zero)
+                $logBox.Invalidate()
+            }
         }
 
         if ($eventLines.Count -gt 0) {
