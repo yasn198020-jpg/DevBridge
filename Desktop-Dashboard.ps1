@@ -166,6 +166,16 @@ $logTitle.Location = New-Object System.Drawing.Point(22,235)
 $logTitle.Size = New-Object System.Drawing.Size(300,25)
 $form.Controls.Add($logTitle)
 
+$copyLog = New-Object System.Windows.Forms.Button
+$copyLog.Text = "Copy log"
+$copyLog.Location = New-Object System.Drawing.Point(632,231)
+$copyLog.Size = New-Object System.Drawing.Size(110,30)
+$copyLog.Anchor = "Top,Right"
+$copyLog.FlatStyle = "Flat"
+$copyLog.BackColor = [System.Drawing.Color]::FromArgb(225,229,235)
+$copyLog.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$form.Controls.Add($copyLog)
+
 $clearLog = New-Object System.Windows.Forms.Button
 $clearLog.Text = "Clear log"
 $clearLog.Location = New-Object System.Drawing.Point(752,231)
@@ -186,6 +196,22 @@ $logBox.ForeColor = [System.Drawing.Color]::FromArgb(225,231,239)
 $logBox.Font = New-Object System.Drawing.Font("Consolas", 9)
 $logBox.BorderStyle = "FixedSingle"
 $form.Controls.Add($logBox)
+
+$copyLog.Add_Click({
+    try {
+        if ([string]::IsNullOrWhiteSpace($logBox.Text)) {
+            [System.Windows.Forms.MessageBox]::Show("The log is empty.", "Copy log") | Out-Null
+            return
+        }
+        [System.Windows.Forms.Clipboard]::SetText($logBox.Text)
+        $detail.Text = "Log copied to clipboard."
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show(
+            ("Could not copy the log. " + $_.Exception.Message),
+            "Copy log"
+        ) | Out-Null
+    }
+})
 
 $clearLog.Add_Click({
     try {
