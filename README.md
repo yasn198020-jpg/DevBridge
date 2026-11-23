@@ -21,6 +21,7 @@ The dedicated browser profile is separate from your everyday browser profile, so
 
 ## Monitoring
 - Starts without pressing Enter.
+- Polls `origin/<configured-branch>` every 20 seconds by default (configurable with `automation.gitPollIntervalSeconds`). A newly pushed commit is fetched and built automatically; no ChatGPT command is required.
 - Follows the focused ChatGPT tab; if focus moves outside ChatGPT, it retains the last selected ChatGPT tab.
 - Stores per-conversation message hashes in state/monitor-state.json. A newly encountered conversation is baselined, so old commands are not replayed.
 - On restart, the currently visible last message is baselined to avoid replaying a command after a crash or reboot.
@@ -34,7 +35,7 @@ The final line of the last assistant message must be one of:
     DEVBRIDGE: DONE
     DEVBRIDGE: ABORT
 
-BUILD READY (legacy BUILD accepted) fetches the configured branch, fast-forwards only, builds once for the commit batch and reports to the originating chat. WAIT keeps monitoring. DONE stops only when the latest remote commit is exactly the successfully built commit. ABORT stops immediately.
+A new commit on the configured remote branch automatically triggers a fast-forward-only update, build and report to the currently selected ChatGPT conversation. `DEVBRIDGE: BUILD READY` (legacy `BUILD` accepted) remains available to force an immediate build of the current branch. `WAIT` pauses command-driven actions while Git monitoring remains active. `ABORT` stops immediately.
 
 ## Git safety
 DevBridge never switches branches, refuses dirty working trees, uses git pull --ff-only, and never resets, rebases or force-pushes. Diverged/local-ahead histories stop safely.
