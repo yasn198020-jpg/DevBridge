@@ -293,7 +293,7 @@ function Show-ProjectSelector {
             if ([string]$branchCombo.Items[$i] -eq ("* " + $preferredBranch) -or [string]$branchCombo.Items[$i] -eq $preferredBranch) { $index = $i; break }
         }
         if ($index -lt 0) {
-            for ($i = 0; $i -lt $branchCombo.Items.Count; $i++) { if ([string]$branchCombo.Items[$i] -like "* ") { $index = $i; break } }
+            for ($i = 0; $i -lt $branchCombo.Items.Count; $i++) { if (([string]$branchCombo.Items[$i]).StartsWith("* ")) { $index = $i; break } }
         }
         if ($index -lt 0 -and $branchCombo.Items.Count -gt 0) { $index = 0 }
         if ($index -ge 0) { $branchCombo.SelectedIndex = $index }
