@@ -355,6 +355,21 @@ function Invoke-OneBuild([string]$ConversationId) {
     if (-not (Test-Path -LiteralPath $working)) { throw "Build working directory does not exist: $working" }
     $buildLog = Join-Path $LogRoot "last-build.log"
     Write-Log "Building commit $commit"
+    $startNotice = @"
+DevBridge: СБОРКА НАЧАЛАСЬ
+Проект: $($selected.name)
+Ветка: $expectedBranch
+Коммит: $commit
+$(if ($null -ne $versionInfo) { "VersionCode: $($versionInfo.Next)" } else { "" })
+
+Это автоматическое уведомление о старте. Дождись итогового отчёта сборки.
+"@
+    try {
+        $notice = Invoke-Bridge $script:BrowserProcess "send" $startNotice $null $false $true
+        Write-Log "Build-start notification sent to latest ChatGPT conversation: $($notice.url)"
+    } catch {
+        Write-Log "Could not send build-start notification to ChatGPT; build will continue: $($_.Exception.Message)"
+    }
     Push-Location $working
     $previousErrorActionPreference = $ErrorActionPreference
     $previousNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
@@ -377,11 +392,31 @@ function Invoke-OneBuild([string]$ConversationId) {
         # actual native process exit code is the authoritative build result.
         $ErrorActionPreference = "Continue"
         $PSNativeCommandUseErrorActionPreference = $false
-        & $buildCommand @buildArgs 2>&1 | Tee-Object -FilePath $buildLog
-        $exitCode = $LASTEXITCODE
-        if ($null -eq $exitCode) { $exitCode = 0 }
+        # Keep the log file readable while the build is running. Tee-Object may
+        # hold its output file in a way that prevents the dashboard from tailing it.
+        $buildStream = New-Object System.IO.FileStream(
+            $buildLog,
+            [System.IO.FileMode]::Create,
+            [System.IO.FileAccess]::Write,
+            [System.IO.FileShare]::ReadWrite
+        )
+        $buildWriter = New-Object System.IO.StreamWriter($buildStream, (New-Object System.Text.UTF8Encoding($false)))
+        $buildWriter.AutoFlush = $true
+        try {
+            & $buildCommand @buildArgs 2>&1 | ForEach-Object {
+                $line = [string]$_
+                $buildWriter.WriteLine($line)
+                Write-Host $line
+            }
+            $exitCode = $LASTEXITCODE
+            if ($null -eq $exitCode) { $exitCode = 0 }
+        } finally {
+            if ($buildWriter) { $buildWriter.Flush(); $buildWriter.Dispose() }
+        }
     } catch {
-        $_ | Out-String | Tee-Object -FilePath $buildLog -Append
+        $errorText = ($_ | Out-String)
+        try { [IO.File]::AppendAllText($buildLog, $errorText, $Utf8NoBom) } catch {}
+        Write-Host $errorText
         $exitCode = 1
     } finally {
         $ErrorActionPreference = $previousErrorActionPreference
