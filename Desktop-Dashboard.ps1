@@ -25,21 +25,67 @@ $BuildLogPath = Join-Path $Root "logs/last-build.log"
 $StopPath = Join-Path $Root "state/stop-monitoring.request"
 $script:BridgeProcess = $null
 $ProjectsConfigPath = Join-Path $Root "config/projects.json"
-if (-not (Test-Path -LiteralPath $ProjectsConfigPath)) {
-    throw "Missing config/projects.json. Configure at least one repository and branch first."
+$script:ProjectConfigs = @()
+if (Test-Path -LiteralPath $ProjectsConfigPath) {
+    $projectsDocument = Get-Content -LiteralPath $ProjectsConfigPath -Raw | ConvertFrom-Json
+    $script:ProjectConfigs = @($projectsDocument.projects | Where-Object {
+        $_.repository -and $_.branch -and $_.name -and $_.buildCommand
+    })
 }
-$projectsDocument = Get-Content -LiteralPath $ProjectsConfigPath -Raw | ConvertFrom-Json
-$script:ProjectConfigs = @($projectsDocument.projects | Where-Object {
-    $_.repository -and $_.branch -and $_.name
-})
 if ($script:ProjectConfigs.Count -eq 0) {
-    throw "config/projects.json contains no usable repository/branch entries."
+    throw "No build profiles found in config/projects.json. Existing profiles provide build commands; repository discovery itself is automatic."
 }
 $script:SelectedProject = $script:ProjectConfigs | Where-Object { $_.name -eq $Project } | Select-Object -First 1
 if (-not $script:SelectedProject) {
     $script:SelectedProject = $script:ProjectConfigs | Where-Object { $_.enabled } | Select-Object -First 1
 }
 if (-not $script:SelectedProject) { $script:SelectedProject = $script:ProjectConfigs[0] }
+
+function Get-RepositorySearchRoots {
+    $roots = New-Object System.Collections.Generic.List[string]
+    foreach ($candidate in @("C:\tep\git", "I:\tep\git", (Join-Path $env:USERPROFILE "source\repos"), (Join-Path $env:USERPROFILE "git"))) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Container) -and -not $roots.Contains([IO.Path]::GetFullPath($candidate))) {
+            $roots.Add([IO.Path]::GetFullPath($candidate))
+        }
+    }
+    foreach ($profile in $script:ProjectConfigs) {
+        $parent = Split-Path -Parent ([string]$profile.repository)
+        if ($parent -and (Test-Path -LiteralPath $parent -PathType Container)) {
+            $full = [IO.Path]::GetFullPath($parent)
+            if (-not $roots.Contains($full)) { $roots.Add($full) }
+        }
+    }
+    return @($roots)
+}
+function Find-LocalGitRepositories {
+    $found = New-Object System.Collections.Generic.List[string]
+    $visited = @{}
+    $skipNames = @(".git", "node_modules", ".gradle", "build", "bin", "obj", "packages")
+    $scan = {
+        param([string]$folder, [int]$depth)
+        if ($depth -gt 7 -or $visited.ContainsKey($folder)) { return }
+        $visited[$folder] = $true
+        if (Test-Path -LiteralPath (Join-Path $folder ".git")) {
+            $found.Add([IO.Path]::GetFullPath($folder))
+            return
+        }
+        foreach ($child in @(Get-ChildItem -LiteralPath $folder -Directory -Force -ErrorAction SilentlyContinue)) {
+            if ($skipNames -notcontains $child.Name) { & $scan $child.FullName ($depth + 1) }
+        }
+    }
+    foreach ($rootPath in (Get-RepositorySearchRoots)) { & $scan $rootPath 0 }
+    foreach ($profile in $script:ProjectConfigs) {
+        $path = [IO.Path]::GetFullPath([string]$profile.repository)
+        if ((Test-Path -LiteralPath (Join-Path $path ".git")) -and -not $found.Contains($path)) { $found.Add($path) }
+    }
+    return @($found | Sort-Object -Unique)
+}
+function Get-RepositoryBranches([string]$RepositoryPath) {
+    $lines = @(& git -C $RepositoryPath branch --format="%(refname:short)" 2>$null)
+    if ($LASTEXITCODE -ne 0) { return @() }
+    return @($lines | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+}
+
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = ("DevBridge - {0}" -f $script:SelectedProject.name)
@@ -157,8 +203,8 @@ function Set-Running([bool]$running, [string]$message = "") {
 
 function Show-ProjectSelector {
     $dialog = New-Object System.Windows.Forms.Form
-    $dialog.Text = "Select repository and branch"
-    $dialog.Size = New-Object System.Drawing.Size(700,260)
+    $dialog.Text = "Select local repository and branch"
+    $dialog.Size = New-Object System.Drawing.Size(720,330)
     $dialog.StartPosition = "CenterParent"
     $dialog.FormBorderStyle = "FixedDialog"
     $dialog.MaximizeBox = $false
@@ -167,73 +213,124 @@ function Show-ProjectSelector {
     $dialog.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 
     $repoLabel = New-Object System.Windows.Forms.Label
-    $repoLabel.Text = "Local repository"
-    $repoLabel.Location = New-Object System.Drawing.Point(22,22)
-    $repoLabel.Size = New-Object System.Drawing.Size(620,22)
+    $repoLabel.Text = "Local Git repository (automatic scan)"
+    $repoLabel.Location = New-Object System.Drawing.Point(22,18)
+    $repoLabel.Size = New-Object System.Drawing.Size(650,22)
     $dialog.Controls.Add($repoLabel)
 
     $repoCombo = New-Object System.Windows.Forms.ComboBox
-    $repoCombo.Location = New-Object System.Drawing.Point(22,48)
-    $repoCombo.Size = New-Object System.Drawing.Size(640,28)
+    $repoCombo.Location = New-Object System.Drawing.Point(22,44)
+    $repoCombo.Size = New-Object System.Drawing.Size(660,28)
     $repoCombo.DropDownStyle = "DropDownList"
     $dialog.Controls.Add($repoCombo)
 
     $branchLabel = New-Object System.Windows.Forms.Label
-    $branchLabel.Text = "Branch"
-    $branchLabel.Location = New-Object System.Drawing.Point(22,88)
-    $branchLabel.Size = New-Object System.Drawing.Size(620,22)
+    $branchLabel.Text = "Local Git branches (current branch is marked with *)"
+    $branchLabel.Location = New-Object System.Drawing.Point(22,84)
+    $branchLabel.Size = New-Object System.Drawing.Size(650,22)
     $dialog.Controls.Add($branchLabel)
 
     $branchCombo = New-Object System.Windows.Forms.ComboBox
-    $branchCombo.Location = New-Object System.Drawing.Point(22,114)
-    $branchCombo.Size = New-Object System.Drawing.Size(640,28)
+    $branchCombo.Location = New-Object System.Drawing.Point(22,110)
+    $branchCombo.Size = New-Object System.Drawing.Size(660,28)
     $branchCombo.DropDownStyle = "DropDownList"
     $dialog.Controls.Add($branchCombo)
 
-    $repoPaths = @($script:ProjectConfigs | Select-Object -ExpandProperty repository -Unique)
-    foreach ($repoPath in $repoPaths) { [void]$repoCombo.Items.Add([string]$repoPath) }
-    $repoCombo.SelectedItem = [string]$script:SelectedProject.repository
-    if ($repoCombo.SelectedIndex -lt 0 -and $repoCombo.Items.Count -gt 0) { $repoCombo.SelectedIndex = 0 }
+    $hint = New-Object System.Windows.Forms.Label
+    $hint.Location = New-Object System.Drawing.Point(22,148)
+    $hint.Size = New-Object System.Drawing.Size(660,42)
+    $hint.ForeColor = [System.Drawing.Color]::DimGray
+    $dialog.Controls.Add($hint)
 
-    $refreshBranches = {
-        $branchCombo.Items.Clear()
-        $repoValue = [string]$repoCombo.SelectedItem
-        $branchNames = @($script:ProjectConfigs | Where-Object { $_.repository -eq $repoValue } | Select-Object -ExpandProperty branch -Unique)
-        foreach ($branchName in $branchNames) { [void]$branchCombo.Items.Add([string]$branchName) }
-        if ($repoValue -eq [string]$script:SelectedProject.repository) {
-            $branchCombo.SelectedItem = [string]$script:SelectedProject.branch
-        }
-        if ($branchCombo.SelectedIndex -lt 0 -and $branchCombo.Items.Count -gt 0) { $branchCombo.SelectedIndex = 0 }
-    }
-    $repoCombo.Add_SelectedIndexChanged($refreshBranches)
-    & $refreshBranches
+    $refresh = New-Object System.Windows.Forms.Button
+    $refresh.Text = "Refresh scan"
+    $refresh.Location = New-Object System.Drawing.Point(22,218)
+    $refresh.Size = New-Object System.Drawing.Size(130,34)
+    $dialog.Controls.Add($refresh)
 
     $ok = New-Object System.Windows.Forms.Button
     $ok.Text = "Select"
-    $ok.Location = New-Object System.Drawing.Point(442,166)
+    $ok.Location = New-Object System.Drawing.Point(462,218)
     $ok.Size = New-Object System.Drawing.Size(105,34)
     $ok.DialogResult = [System.Windows.Forms.DialogResult]::OK
     $dialog.Controls.Add($ok)
 
     $cancel = New-Object System.Windows.Forms.Button
     $cancel.Text = "Cancel"
-    $cancel.Location = New-Object System.Drawing.Point(557,166)
+    $cancel.Location = New-Object System.Drawing.Point(577,218)
     $cancel.Size = New-Object System.Drawing.Size(105,34)
     $cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
     $dialog.Controls.Add($cancel)
+
+    $script:DiscoveredRepositories = @()
+    $script:DiscoveredBranches = @{}
+    $loadRepositories = {
+        $repoCombo.Items.Clear()
+        $branchCombo.Items.Clear()
+        $hint.Text = "Scanning local Git folders..."
+        $dialog.Refresh()
+        $script:DiscoveredRepositories = @(Find-LocalGitRepositories)
+        foreach ($path in $script:DiscoveredRepositories) { [void]$repoCombo.Items.Add($path) }
+        $preferred = [string]$script:SelectedProject.repository
+        $repoCombo.SelectedItem = $preferred
+        if ($repoCombo.SelectedIndex -lt 0 -and $repoCombo.Items.Count -gt 0) { $repoCombo.SelectedIndex = 0 }
+        if ($repoCombo.Items.Count -eq 0) { $hint.Text = "No Git repositories found in the search folders." }
+    }
+    $loadBranches = {
+        $branchCombo.Items.Clear()
+        $repoValue = [string]$repoCombo.SelectedItem
+        if (-not $repoValue) { return }
+        $branches = @(Get-RepositoryBranches $repoValue)
+        $script:DiscoveredBranches[$repoValue] = $branches
+        $current = [string](& git -C $repoValue branch --show-current 2>$null)
+        foreach ($branch in $branches) {
+            $display = if ($branch -eq $current) { "* " + $branch } else { $branch }
+            [void]$branchCombo.Items.Add($display)
+        }
+        $preferredBranch = [string]$script:SelectedProject.branch
+        $index = -1
+        for ($i = 0; $i -lt $branchCombo.Items.Count; $i++) {
+            if ([string]$branchCombo.Items[$i] -eq ("* " + $preferredBranch) -or [string]$branchCombo.Items[$i] -eq $preferredBranch) { $index = $i; break }
+        }
+        if ($index -lt 0) {
+            for ($i = 0; $i -lt $branchCombo.Items.Count; $i++) { if ([string]$branchCombo.Items[$i] -like "* ") { $index = $i; break } }
+        }
+        if ($index -lt 0 -and $branchCombo.Items.Count -gt 0) { $index = 0 }
+        if ($index -ge 0) { $branchCombo.SelectedIndex = $index }
+        $profile = $script:ProjectConfigs | Where-Object { [IO.Path]::GetFullPath([string]$_.repository) -eq [IO.Path]::GetFullPath($repoValue) } | Select-Object -First 1
+        if ($profile) {
+            $hint.Text = "Build profile: " + [string]$profile.name + ". DevBridge will not switch branches automatically; select the branch currently checked out in Git."
+        } else {
+            $hint.Text = "Repository discovered, but no build profile exists for it in config/projects.json. It can be inspected, but cannot be built by DevBridge yet."
+        }
+    }
+    $repoCombo.Add_SelectedIndexChanged($loadBranches)
+    $refresh.Add_Click({ & $loadRepositories })
+    & $loadRepositories
+    & $loadBranches
+
     $dialog.AcceptButton = $ok
     $dialog.CancelButton = $cancel
-
     if ($dialog.ShowDialog($form) -eq [System.Windows.Forms.DialogResult]::OK) {
         $repoValue = [string]$repoCombo.SelectedItem
-        $branchValue = [string]$branchCombo.SelectedItem
-        $match = $script:ProjectConfigs | Where-Object {
-            $_.repository -eq $repoValue -and $_.branch -eq $branchValue
-        } | Select-Object -First 1
-        if ($match) {
-            $script:SelectedProject = $match
-            $form.Text = ("DevBridge - {0}" -f $script:SelectedProject.name)
-            $detail.Text = ("{0} | {1}" -f $script:SelectedProject.repository, $script:SelectedProject.branch)
+        $displayBranch = [string]$branchCombo.SelectedItem
+        $branchValue = $displayBranch -replace '^\* ', ''
+        $current = [string](& git -C $repoValue branch --show-current 2>$null)
+        if (-not $repoValue -or -not $branchValue) {
+            [System.Windows.Forms.MessageBox]::Show("Select a repository and branch.", "DevBridge") | Out-Null
+        } elseif ($branchValue -ne $current) {
+            [System.Windows.Forms.MessageBox]::Show("The selected branch is not checked out. DevBridge never switches branches automatically. Check out this branch in Git first, then select it again.", "Branch not active") | Out-Null
+        } else {
+            $match = $script:ProjectConfigs | Where-Object {
+                [IO.Path]::GetFullPath([string]$_.repository) -eq [IO.Path]::GetFullPath($repoValue) -and $_.branch -eq $branchValue
+            } | Select-Object -First 1
+            if (-not $match) {
+                [System.Windows.Forms.MessageBox]::Show("This repository/branch has no build profile. Existing build settings are kept unchanged.", "No build profile") | Out-Null
+            } else {
+                $script:SelectedProject = $match
+                $form.Text = ("DevBridge - {0}" -f $script:SelectedProject.name)
+                $detail.Text = ("{0} | {1}" -f $repoValue, $branchValue)
+            }
         }
     }
     $dialog.Dispose()
