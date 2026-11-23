@@ -111,19 +111,40 @@ async function findLatestConversation(target) {
   return target;
 }
 async function openBlankChat(target) {
-  await target.goto(chatUrl, { waitUntil: "domcontentloaded" });
-  await target.waitForTimeout(1400);
-  if (await messages(target).count()) {
-    // The home URL can redirect back into the previous conversation. Use the
-    // visible New chat control as a second, explicit route to a blank thread.
-    const newChat = target.getByRole("button", { name: /new chat|новый чат/i }).first();
-    if (await newChat.count()) {
-      await newChat.click();
-      await target.waitForTimeout(900);
+  // Do not rely on navigating to "/" alone: ChatGPT may restore the previous
+  // thread. Explicitly invoke the UI's New chat action and verify the result.
+  const selectors = [
+    '[data-testid="create-new-chat-button"]',
+    'button[aria-label*="New chat" i]',
+    'button[aria-label*="Новый чат" i]',
+    'a[aria-label*="New chat" i]',
+    'a[aria-label*="Новый чат" i]'
+  ];
+  let opened = false;
+  for (let attempt = 0; attempt < 3 && !opened; attempt++) {
+    for (const selector of selectors) {
+      const control = target.locator(selector).first();
+      if (await control.count().catch(() => 0) && await control.isVisible().catch(() => false)) {
+        await control.click().catch(() => {});
+        await target.waitForTimeout(1000);
+        const pathNow = new URL(target.url()).pathname;
+        if (!/\/c\/[0-9a-f-]+/i.test(pathNow) && await target.locator('#prompt-textarea, [contenteditable="true"]').count()) {
+          opened = true;
+          break;
+        }
+      }
+    }
+    if (!opened) {
+      await target.reload({ waitUntil: "domcontentloaded" });
+      await target.waitForTimeout(1200);
     }
   }
+  if (!opened) {
+    throw new Error("Could not explicitly open a new ChatGPT conversation; report was not sent.");
+  }
+  // A blank thread must have no prior assistant messages before publication.
   if (await messages(target).count()) {
-    throw new Error("ChatGPT did not open a blank conversation; report was not sent.");
+    throw new Error("New chat still contains previous messages; report was not sent.");
   }
   page = target;
   preferredPage = target;
