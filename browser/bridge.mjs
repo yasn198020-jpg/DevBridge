@@ -110,6 +110,30 @@ async function findLatestConversation(target) {
   preferredPage = target;
   return target;
 }
+async function openBlankChat(target) {
+  await target.goto(chatUrl, { waitUntil: "domcontentloaded" });
+  await target.waitForTimeout(1400);
+  if (await messages(target).count()) {
+    // The home URL can redirect back into the previous conversation. Use the
+    // visible New chat control as a second, explicit route to a blank thread.
+    const newChat = target.getByRole("button", { name: /new chat|новый чат/i }).first();
+    if (await newChat.count()) {
+      await newChat.click();
+      await target.waitForTimeout(900);
+    }
+  }
+  if (await messages(target).count()) {
+    throw new Error("ChatGPT did not open a blank conversation; report was not sent.");
+  }
+  page = target;
+  preferredPage = target;
+  return target;
+}
+async function isContextFull(target) {
+  return await target.locator("body").innerText().then(text =>
+    /контекстное окно заполнено|context window is full|conversation is too long/i.test(text)
+  ).catch(() => false);
+}
 async function send(target, text) {
   const editor0 = target.locator("#prompt-textarea").last();
   const editor = await editor0.count() ? editor0 : target.locator('[contenteditable="true"]').last();
@@ -118,6 +142,14 @@ async function send(target, text) {
   const button = target.locator('button[data-testid="send-button"]');
   if (await button.count() && await button.last().isEnabled()) await button.last().click();
   else await editor.press("Enter");
+  // Confirm that the message actually left the composer. Do not report success
+  // while text is merely sitting in the input box (e.g. a full-context chat).
+  await target.waitForTimeout(900);
+  const remaining = await editor.inputValue().catch(async () => await editor.innerText().catch(() => ""));
+  if ((remaining || "").trim() === text.trim()) {
+    throw new Error("ChatGPT did not accept the message; it remains in the composer.");
+  }
+  await target.waitForTimeout(700);
 }
 async function handle(cmd) {
   if (cmd.op === "quit") { output({ok:true,disconnected:true}); browser=undefined;context=undefined;page=undefined;preferredPage=undefined;return; }
@@ -138,6 +170,9 @@ async function handle(cmd) {
     if (cmd.latestChat) {
       target = await choosePage();
       target = await findLatestConversation(target);
+      if (await isContextFull(target)) {
+        await openBlankChat(target);
+      }
     } else if (cmd.conversationId) {
       target = context.pages().find(p => !p.isClosed() && isChat(p) && p.url().includes("/c/"+cmd.conversationId));
       if (!target) throw new Error("Command conversation is no longer open; refusing to send to another chat.");
