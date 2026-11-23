@@ -270,29 +270,32 @@ function Wait-ForQuietRemoteCommit([int]$QuietSeconds = 6) {
     # Coalesce a burst of pushes: start only after the remote HEAD has stayed
     # unchanged for the quiet window. A newer commit resets the window, so A+B
     # pushed before the build starts produce one build of B.
-    $candidate = Get-RemoteBuildTarget
-    if (-not $candidate) { return $false }
-    Write-Log "New remote commit detected: $candidate. Waiting ${QuietSeconds}s for additional commits before building."
-    $stableSince = Get-Date
-    while (((Get-Date) - $stableSince).TotalSeconds -lt $QuietSeconds) {
-        Start-Sleep -Seconds 2
+    while ($true) {
+        $candidate = Get-RemoteBuildTarget
+        if (-not $candidate) { return $false }
+        Write-Log "New remote commit detected: $candidate. Waiting ${QuietSeconds}s for additional commits before building."
+        $stableSince = Get-Date
+        $restartWindow = $false
+        while (((Get-Date) - $stableSince).TotalSeconds -lt $QuietSeconds) {
+            Start-Sleep -Seconds 2
+            $latest = Get-RemoteBuildTarget
+            if (-not $latest) { return $false }
+            if ($latest -ne $candidate) {
+                Write-Log "Coalescing rapid commits: $candidate -> $latest. Quiet window restarted."
+                $candidate = $latest
+                $stableSince = Get-Date
+            }
+        }
+        # One last fetch narrows the race between the quiet-window check and build.
         $latest = Get-RemoteBuildTarget
         if (-not $latest) { return $false }
         if ($latest -ne $candidate) {
-            Write-Log "Coalescing rapid commits: $candidate -> $latest. Quiet window restarted."
-            $candidate = $latest
-            $stableSince = Get-Date
+            Write-Log "A newer commit arrived at the end of the quiet window: $candidate -> $latest. Restarting quiet window."
+            continue
         }
+        Write-Log "Remote HEAD stable at $candidate; starting build."
+        return $true
     }
-    # One last fetch narrows the race between the quiet-window check and build.
-    $latest = Get-RemoteBuildTarget
-    if (-not $latest) { return $false }
-    if ($latest -ne $candidate) {
-        Write-Log "A newer commit arrived at the end of the quiet window: $candidate -> $latest. Waiting again."
-        return (Wait-ForQuietRemoteCommit $QuietSeconds)
-    }
-    Write-Log "Remote HEAD stable at $candidate; starting build."
-    return $true
 }
 function Invoke-OneBuild([string]$ConversationId) {
     Assert-RepositorySafe
