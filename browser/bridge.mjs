@@ -27,9 +27,9 @@ async function choosePage() {
       catch { return false; }
     })();
     if (savedIsConversation) {
-      const savedPath = new URL(savedChatUrl).pathname.replace(/\\/$/, "");
+      const savedPath = new URL(savedChatUrl).pathname.replace(/\/$/, "");
       const savedPage = candidates.find(p => {
-        try { return new URL(p.url()).pathname.replace(/\\/$/, "") === savedPath; }
+        try { return new URL(p.url()).pathname.replace(/\/$/, "") === savedPath; }
         catch { return false; }
       });
       if (savedPage) {
