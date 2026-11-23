@@ -87,7 +87,7 @@ async function findLatestConversation(target) {
         const r = el.getBoundingClientRect();
         return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
       }).map(el => el.getAttribute("href"))
-        .find(value => value && /^\\/c\\/[0-9a-f-]+/i.test(value)) || null)
+        .find(value => value && /^\/c\/[0-9a-f-]+/i.test(value)) || null)
       .catch(() => null);
     if (!href) await target.waitForTimeout(700);
   }
@@ -96,11 +96,11 @@ async function findLatestConversation(target) {
       const r = el.getBoundingClientRect();
       return r.width > 0 && r.height > 0;
     }).map(el => el.getAttribute("href"))
-      .find(value => value && /^\\/c\\/[0-9a-f-]+/i.test(value)) || null).catch(() => null);
+      .find(value => value && /^\/c\/[0-9a-f-]+/i.test(value)) || null).catch(() => null);
   }
   if (!href) throw new Error("Could not identify the latest conversation in the refreshed ChatGPT sidebar; report was not sent.");
   const latestUrl = new URL(href, chatUrl).toString();
-  if (new URL(target.url()).pathname.replace(/\\/$/, "") !== new URL(latestUrl).pathname.replace(/\\/$/, "")) {
+  if (new URL(target.url()).pathname.replace(/\/$/, "") !== new URL(latestUrl).pathname.replace(/\/$/, "")) {
     await target.goto(latestUrl, { waitUntil: "domcontentloaded" });
     await target.waitForTimeout(900);
   }
@@ -145,7 +145,7 @@ async function handle(cmd) {
     } else if (cmd.pinPreferred && preferredPage && !preferredPage.isClosed()) target=preferredPage;
     else target=await choosePage();
     await send(target,cmd.text);
-    const match = target.url().match(/\\/c\\/([0-9a-f-]+)/i);
+    const match = target.url().match(/\/c\/([0-9a-f-]+)/i);
     output({ok:true,url:target.url(),conversationId:match?.[1]||null,latestChat:!!cmd.latestChat}); return;
   }
   if (cmd.op === "newchat") {
