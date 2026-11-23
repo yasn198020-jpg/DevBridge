@@ -21,7 +21,9 @@ The dedicated browser profile is separate from your everyday browser profile, so
 
 ## Monitoring
 - Starts without pressing Enter.
-- Polls `origin/<configured-branch>` every 20 seconds by default (configurable with `automation.gitPollIntervalSeconds`). A newly pushed commit is fetched and built automatically; no ChatGPT command is required.
+- Polls `origin/<configured-branch>` every 20 seconds by default (configurable with `automation.gitPollIntervalSeconds`). A newly pushed commit is fetched automatically; no ChatGPT command is required.
+- Before an automatic build, waits for the remote HEAD to remain unchanged for 6 seconds, checking every 2 seconds. If commits A and B arrive during this quiet window, the timer restarts and only the latest state (B) is built. A final fetch inside the build path also picks up a push that lands just before the build starts.
+- If another commit arrives after the build has already pulled its source, the current build is allowed to finish and the next Git poll queues the newer state for a follow-up build.
 - Follows the focused ChatGPT tab; if focus moves outside ChatGPT, it retains the last selected ChatGPT tab.
 - Stores per-conversation message hashes in state/monitor-state.json. A newly encountered conversation is baselined, so old commands are not replayed.
 - On restart, the currently visible last message is baselined to avoid replaying a command after a crash or reboot.
