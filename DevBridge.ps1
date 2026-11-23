@@ -4,6 +4,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# Keep PowerShell and native-process text output in UTF-8.
+# The bridge itself already reads Node stdout as UTF-8; this also prevents
+# Russian text from being mis-decoded when PowerShell displays native output.
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+try { [Console]::OutputEncoding = $Utf8NoBom } catch {}
+$OutputEncoding = $Utf8NoBom
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $SettingsPath = Join-Path $Root "config/settings.json"
 $ProjectsPath = Join-Path $Root "config/projects.json"
