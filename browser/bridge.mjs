@@ -76,6 +76,40 @@ async function getSnapshot(target) {
   const match = target.url().match(/\/c\/([0-9a-f-]+)/i);
   return {ok:true,url:target.url(),conversationId:match?.[1]||null,assistantText,assistantMessageId,conversationCharacters:chars,conversationMessageCount:count};
 }
+async function findLatestConversation(target) {
+  // Refresh first so the sidebar's recent-chat ordering is current.
+  await target.reload({ waitUntil: "domcontentloaded" });
+  await target.waitForTimeout(1800);
+  let href = null;
+  for (let attempt = 0; attempt < 12 && !href; attempt++) {
+    href = await target.locator("nav a[href*='/c/'], aside a[href*='/c/']")
+      .evaluateAll(els => els.filter(el => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
+      }).map(el => el.getAttribute("href"))
+        .find(value => value && /^\\/c\\/[0-9a-f-]+/i.test(value)) || null)
+      .catch(() => null);
+    if (!href) await target.waitForTimeout(700);
+  }
+  if (!href) {
+    href = await target.locator("a[href*='/c/']").evaluateAll(els => els.filter(el => {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    }).map(el => el.getAttribute("href"))
+      .find(value => value && /^\\/c\\/[0-9a-f-]+/i.test(value)) || null).catch(() => null);
+  }
+  if (!href) throw new Error("Could not identify the latest conversation in the refreshed ChatGPT sidebar; report was not sent.");
+  const latestUrl = new URL(href, chatUrl).toString();
+  if (new URL(target.url()).pathname.replace(/\\/$/, "") !== new URL(latestUrl).pathname.replace(/\\/$/, "")) {
+    await target.goto(latestUrl, { waitUntil: "domcontentloaded" });
+    await target.waitForTimeout(900);
+  }
+  const snapshot = await getSnapshot(target);
+  if (!snapshot.conversationId) throw new Error("Latest conversation URL could not be confirmed; report was not sent.");
+  page = target;
+  preferredPage = target;
+  return target;
+}
 async function send(target, text) {
   const editor0 = target.locator("#prompt-textarea").last();
   const editor = await editor0.count() ? editor0 : target.locator('[contenteditable="true"]').last();
@@ -101,13 +135,18 @@ async function handle(cmd) {
   if (cmd.op === "send") {
     if (typeof cmd.text !== "string" || !cmd.text.trim()) throw new Error("send requires text.");
     let target;
-    if (cmd.conversationId) {
+    if (cmd.latestChat) {
+      target = await choosePage();
+      target = await findLatestConversation(target);
+    } else if (cmd.conversationId) {
       target = context.pages().find(p => !p.isClosed() && isChat(p) && p.url().includes("/c/"+cmd.conversationId));
       if (!target) throw new Error("Command conversation is no longer open; refusing to send to another chat.");
       page=target;preferredPage=target;
     } else if (cmd.pinPreferred && preferredPage && !preferredPage.isClosed()) target=preferredPage;
     else target=await choosePage();
-    await send(target,cmd.text); output({ok:true,url:target.url()}); return;
+    await send(target,cmd.text);
+    const match = target.url().match(/\\/c\\/([0-9a-f-]+)/i);
+    output({ok:true,url:target.url(),conversationId:match?.[1]||null,latestChat:!!cmd.latestChat}); return;
   }
   if (cmd.op === "newchat") {
     let target;
