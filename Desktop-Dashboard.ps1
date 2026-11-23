@@ -42,7 +42,7 @@ if (-not $script:SelectedProject) {
 if (-not $script:SelectedProject) { $script:SelectedProject = $script:ProjectConfigs[0] }
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "DevBridge - Android 5.1.1 monitor"
+$form.Text = ("DevBridge - {0}" -f $script:SelectedProject.name)
 $form.Size = New-Object System.Drawing.Size(900, 620)
 $form.MinimumSize = New-Object System.Drawing.Size(720, 480)
 $form.StartPosition = "CenterScreen"
@@ -50,7 +50,7 @@ $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 $form.BackColor = [System.Drawing.Color]::FromArgb(245,247,250)
 
 $header = New-Object System.Windows.Forms.Label
-$header.Text = "DEVBRIDGE / ANDROID 5.1.1"
+$header.Text = "DEVBRIDGE / BUILD MONITOR"
 $header.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 17)
 $header.Location = New-Object System.Drawing.Point(22,18)
 $header.Size = New-Object System.Drawing.Size(600,36)
@@ -232,6 +232,7 @@ function Show-ProjectSelector {
         } | Select-Object -First 1
         if ($match) {
             $script:SelectedProject = $match
+            $form.Text = ("DevBridge - {0}" -f $script:SelectedProject.name)
             $detail.Text = ("{0} | {1}" -f $script:SelectedProject.repository, $script:SelectedProject.branch)
         }
     }
