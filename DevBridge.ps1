@@ -518,6 +518,11 @@ try {
             switch ($command) {
                 "WAIT" { Write-Log "Assistant requested WAIT." }
                 "BUILD" {
+                    $headSha = (Invoke-Git $repo @("rev-parse", "HEAD") | Select-Object -First 1).Trim()
+                    if ($script:HasBuildResult -and $script:LastBuildExitCode -eq 0 -and $script:LastBuiltCommit -eq $headSha) {
+                        Write-Log "The current commit was already built successfully by automatic Git monitoring; skipping duplicate build."
+                        break
+                    }
                     $cycles++
                     if ($cycles -gt $maxCycles) { throw "Maximum build cycle count ($maxCycles) reached." }
                     Invoke-OneBuild $chatId
