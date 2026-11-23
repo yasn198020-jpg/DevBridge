@@ -9,6 +9,7 @@ Add-Type -AssemblyName System.Drawing
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $BridgeScript = Join-Path $Root "DevBridge.ps1"
 $LogPath = Join-Path $Root "logs/devbridge.log"
+$BuildLogPath = Join-Path $Root "logs/last-build.log"
 $StopPath = Join-Path $Root "state/stop-monitoring.request"
 $script:BridgeProcess = $null
 
@@ -170,33 +171,58 @@ $timer.Add_Tick({
         Set-Running $false ("Process exited (code {0}). You can start it again." -f $exit)
     }
 
-    if (Test-Path -LiteralPath $LogPath) {
-        try {
-            $lines = @(Get-Content -LiteralPath $LogPath -Tail 80 -ErrorAction Stop)
-            $newText = $lines -join [Environment]::NewLine
-            if ($logBox.Text -ne $newText) {
-                $logBox.Text = $newText
-                $logBox.SelectionStart = $logBox.TextLength
-                $logBox.ScrollToCaret()
+    try {
+        $eventLines = @()
+        $buildLines = @()
+        if (Test-Path -LiteralPath $LogPath) {
+            $eventLines = @(Get-Content -LiteralPath $LogPath -Tail 60 -ErrorAction Stop)
+        }
+        if (Test-Path -LiteralPath $BuildLogPath) {
+            $buildLines = @(Get-Content -LiteralPath $BuildLogPath -Tail 100 -ErrorAction Stop)
+        }
+
+        # Newest output is always shown first. The build log is streamed by
+        # Tee-Object while Gradle runs, so this view updates during the build.
+        [array]::Reverse($eventLines)
+        [array]::Reverse($buildLines)
+        $display = New-Object System.Collections.Generic.List[string]
+        if ($buildLines.Count -gt 0) {
+            $display.Add("=== LIVE BUILD OUTPUT (newest first) ===")
+            foreach ($line in $buildLines) { $display.Add([string]$line) }
+            $display.Add("")
+        }
+        if ($eventLines.Count -gt 0) {
+            $display.Add("=== EVENTS (newest first) ===")
+            foreach ($line in $eventLines) { $display.Add([string]$line) }
+        }
+        $newText = $display -join [Environment]::NewLine
+        if ($logBox.Text -ne $newText) {
+            $logBox.Text = $newText
+            $logBox.SelectionStart = 0
+            $logBox.ScrollToCaret()
+            $logBox.SelectionStart = 0
+        }
+
+        if ($eventLines.Count -gt 0) {
+            $latest = [string]$eventLines[0]
+            if ($latest -match 'Build finished with exit code 0') {
+                $detail.Text = "Build completed successfully."
+            } elseif ($latest -match 'Build finished with exit code') {
+                $detail.Text = "Build failed - see the build output above."
+            } elseif ($latest -match 'Building commit') {
+                $detail.Text = "Build is running - live Gradle output is shown below."
+            } elseif ($latest -match 'New remote commit detected|Coalescing rapid commits') {
+                $detail.Text = "GitHub changes detected - waiting for the commit batch to finish."
+            } elseif ($latest -match 'Automatic Git monitoring enabled') {
+                $detail.Text = "Waiting for GitHub commits; polling every 20 seconds."
+            } elseif ($latest -match 'DevBridge stopped') {
+                $detail.Text = "Monitoring stopped."
             }
-            if ($lines.Count -gt 0) {
-                $last = [string]$lines[$lines.Count - 1]
-                if ($last -match 'New remote commit detected|Coalescing rapid commits') {
-                    $detail.Text = "GitHub changes detected - waiting for the commit batch to finish."
-                } elseif ($last -match 'Building commit') {
-                    $detail.Text = "Commit detected. Building the project."
-                } elseif ($last -match 'Build finished with exit code 0') {
-                    $detail.Text = "Build completed successfully."
-                } elseif ($last -match 'Build finished with exit code') {
-                    $detail.Text = "Build failed - see the event log."
-                } elseif ($last -match 'Automatic Git monitoring enabled') {
-                    $detail.Text = "Waiting for GitHub commits; polling every 20 seconds."
-                } elseif ($last -match 'DevBridge stopped') {
-                    $detail.Text = "Monitoring stopped."
-                }
-            }
-        } catch {}
-    }
+        }
+        if ($buildLines.Count -gt 0 -and $eventLines.Count -gt 0 -and ([string]$eventLines[0] -match 'Building commit')) {
+            $detail.Text = "Build is running - live Gradle output is shown below."
+        }
+    } catch {}
 })
 $timer.Start()
 
