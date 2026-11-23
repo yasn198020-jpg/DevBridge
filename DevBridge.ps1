@@ -251,20 +251,47 @@ function Resolve-BuildArguments($VersionInfo) {
     }
     return ,$arguments
 }
-function Test-RemoteCommitAvailable {
-    # Poll the configured remote branch independently of ChatGPT commands.
+function Get-RemoteBuildTarget {
+    # Refresh the configured branch and return its exact current target.
     # Never switch branches, reset, rebase, or build from a dirty worktree.
     Assert-RepositorySafe
     Invoke-Git $repo @("fetch", "origin", $expectedBranch) | Out-Null
     $localSha = (Invoke-Git $repo @("rev-parse", "HEAD") | Select-Object -First 1).Trim()
     $remoteSha = (Invoke-Git $repo @("rev-parse", "origin/$expectedBranch") | Select-Object -First 1).Trim()
-    if ($localSha -eq $remoteSha) { return $false }
+    if ($localSha -eq $remoteSha) { return $null }
 
     & git -C $repo merge-base --is-ancestor HEAD "origin/$expectedBranch" 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "Remote branch changed, but local history is not a strict ancestor. Refusing automatic build."
     }
-    Write-Log "New remote commit detected: $localSha -> $remoteSha"
+    return $remoteSha
+}
+function Wait-ForQuietRemoteCommit([int]$QuietSeconds = 6) {
+    # Coalesce a burst of pushes: start only after the remote HEAD has stayed
+    # unchanged for the quiet window. A newer commit resets the window, so A+B
+    # pushed before the build starts produce one build of B.
+    $candidate = Get-RemoteBuildTarget
+    if (-not $candidate) { return $false }
+    Write-Log "New remote commit detected: $candidate. Waiting ${QuietSeconds}s for additional commits before building."
+    $stableSince = Get-Date
+    while (((Get-Date) - $stableSince).TotalSeconds -lt $QuietSeconds) {
+        Start-Sleep -Seconds 2
+        $latest = Get-RemoteBuildTarget
+        if (-not $latest) { return $false }
+        if ($latest -ne $candidate) {
+            Write-Log "Coalescing rapid commits: $candidate -> $latest. Quiet window restarted."
+            $candidate = $latest
+            $stableSince = Get-Date
+        }
+    }
+    # One last fetch narrows the race between the quiet-window check and build.
+    $latest = Get-RemoteBuildTarget
+    if (-not $latest) { return $false }
+    if ($latest -ne $candidate) {
+        Write-Log "A newer commit arrived at the end of the quiet window: $candidate -> $latest. Waiting again."
+        return (Wait-ForQuietRemoteCommit $QuietSeconds)
+    }
+    Write-Log "Remote HEAD stable at $candidate; starting build."
     return $true
 }
 function Invoke-OneBuild([string]$ConversationId) {
@@ -471,8 +498,8 @@ try {
         if (((Get-Date) - $lastGitPoll).TotalSeconds -ge $gitPollSeconds) {
             $lastGitPoll = Get-Date
             try {
-                if (Test-RemoteCommitAvailable) {
-                    Write-Log "Starting automatic build for a newly pushed commit."
+                if (Wait-ForQuietRemoteCommit 6) {
+                    Write-Log "Starting automatic build for the latest coalesced remote state."
                     Invoke-OneBuild $lastActiveChatId
                 }
             } catch {
