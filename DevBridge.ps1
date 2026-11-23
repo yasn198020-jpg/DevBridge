@@ -489,7 +489,14 @@ try {
     }
     $lastActiveChatId = [string]$snapshot.conversationId
     Write-Log "Automatic Git monitoring enabled for origin/$expectedBranch (every ${gitPollSeconds}s)."
+    $stopRequestPath = Join-Path $StateRoot "stop-monitoring.request"
+    if (Test-Path -LiteralPath $stopRequestPath) { Remove-Item -LiteralPath $stopRequestPath -Force }
     while ($true) {
+        if (Test-Path -LiteralPath $stopRequestPath) {
+            Remove-Item -LiteralPath $stopRequestPath -Force -ErrorAction SilentlyContinue
+            Write-Log "Stop requested from the desktop dashboard."
+            break
+        }
         Start-Sleep -Seconds $pollSeconds
         $snapshot = Invoke-Bridge $script:BrowserProcess "snapshot"
         $chatId = [string]$snapshot.conversationId
